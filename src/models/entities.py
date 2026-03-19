@@ -35,6 +35,9 @@ class Project(TimestampMixin, Base):
     project_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_name: Mapped[str] = mapped_column(String(255))
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.team_id"))
+    color: Mapped[str] = mapped_column(String(20), default="#5B6CFF")
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Task(TimestampMixin, Base):

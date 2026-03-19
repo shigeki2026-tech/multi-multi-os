@@ -7,7 +7,6 @@ from src.repositories.db import get_session, init_db
 
 
 def ensure_app_ready():
-    # 各ページから呼んでも安全な共通初期化
     init_db()
     seed_if_needed()
 
@@ -33,9 +32,9 @@ def seed_if_needed():
         session.flush()
 
         projects = [
-            Project(project_name="LEOC", team_id=team1.team_id),
-            Project(project_name="入電管理", team_id=team1.team_id),
-            Project(project_name="品質監査", team_id=team2.team_id),
+            Project(project_name="LEOC", team_id=team1.team_id, color="#D9485F", display_order=10, is_active=True),
+            Project(project_name="入電管理", team_id=team1.team_id, color="#F59F00", display_order=20, is_active=True),
+            Project(project_name="品質監査", team_id=team2.team_id, color="#495057", display_order=30, is_active=True),
         ]
         session.add_all(projects)
         session.flush()
@@ -114,8 +113,8 @@ def seed_if_needed():
             [
                 AppRegistry(app_key="tasks", app_name="タスク", description="タスク管理", display_order=1),
                 AppRegistry(app_key="requests", app_name="SV依頼", description="SV依頼管理", display_order=2),
-                AppRegistry(app_key="leoc", app_name="LEOC速報", description="LEOC応答率速報", display_order=3),
-                AppRegistry(app_key="reports", app_name="日報送信", description="日報プレースホルダ", display_order=4),
-                AppRegistry(app_key="call_details", app_name="呼詳細作成", description="呼詳細プレースホルダ", display_order=5),
+                AppRegistry(app_key="leoc", app_name="応答率速報", description="応答率速報", display_order=3),
+                AppRegistry(app_key="reports", app_name="日報送信", description="日報送信", display_order=4),
+                AppRegistry(app_key="call_details", app_name="呼詳細作成", description="呼詳細作成", display_order=5),
             ]
         )

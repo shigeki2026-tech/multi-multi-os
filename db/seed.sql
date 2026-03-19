@@ -10,10 +10,10 @@ INSERT INTO users (user_id, display_name, email, role, team_id, is_active) VALUE
     (4, '管理者', 'admin@example.com', 'admin', 1, TRUE)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO projects (project_id, project_name, team_id) VALUES
-    (1, 'LEOC', 1),
-    (2, '入電管理', 1),
-    (3, '品質監査', 2)
+INSERT INTO projects (project_id, project_name, team_id, color, display_order, is_active) VALUES
+    (1, 'LEOC', 1, '#D9485F', 10, TRUE),
+    (2, '入電管理', 1, '#F59F00', 20, TRUE),
+    (3, '品質監査', 2, '#495057', 30, TRUE)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO app_registry (app_id, app_key, app_name, description, display_order) VALUES

@@ -5,6 +5,15 @@ from src.models.entities import Task, TaskComment
 from src.utils.serializers import to_dict
 
 
+TASK_TYPE_LABELS = {
+    "personal_task": "個人",
+    "team_task": "チーム",
+    "handover_task": "引継ぎ",
+    "sv_request": "SV依頼",
+    "recurring_task": "定期",
+}
+
+
 class TaskService:
     def __init__(self, task_repository, master_repository, audit_service):
         self.task_repository = task_repository
@@ -25,13 +34,16 @@ class TaskService:
             tasks = [x for x in tasks if x.due_date and x.due_date < today and x.status != "完了"]
 
         users = {u.user_id: u.display_name for u in self.master_repository.list_users()}
+        projects = {p.project_id: p for p in self.master_repository.list_projects(active_only=False)}
         return [
             {
                 "task_id": task.task_id,
-                "task_type": task.task_type,
                 "title": task.title,
-                "requester": users.get(task.requester_user_id, "-"),
-                "assignee": users.get(task.assignee_user_id, "-"),
+                "project_name": projects.get(task.project_id).project_name if projects.get(task.project_id) else "-",
+                "project_color": projects.get(task.project_id).color if projects.get(task.project_id) else "#5B6CFF",
+                "task_type_label": TASK_TYPE_LABELS.get(task.task_type, task.task_type),
+                "requester_name": users.get(task.requester_user_id, "-"),
+                "assignee_name": users.get(task.assignee_user_id, "-"),
                 "priority": task.priority,
                 "status": task.status,
                 "due_date": task.due_date,
@@ -78,6 +90,8 @@ class TaskService:
         users = {u.user_id: u.display_name for u in self.master_repository.list_users()}
         return {
             "task_id": task.task_id,
+            "task_type": task.task_type,
+            "task_type_label": TASK_TYPE_LABELS.get(task.task_type, task.task_type),
             "title": task.title,
             "description": task.description,
             "status": task.status,
@@ -87,23 +101,22 @@ class TaskService:
             "requested_date": task.requested_date,
             "acknowledged_at": task.acknowledged_at,
             "completed_at": task.completed_at,
+            "needs_confirmation": task.needs_confirmation,
+            "team_id": task.team_id,
+            "project_id": task.project_id,
             "requester_user_id": task.requester_user_id,
             "requester_name": users.get(task.requester_user_id, "-"),
             "assignee_user_id": task.assignee_user_id,
             "assignee_name": users.get(task.assignee_user_id, "-"),
         }
 
-    def task_options(self, include_requests=True):
-        tasks = self.task_repository.list_tasks(include_requests=include_requests)
-        return [{"value": x.task_id, "label": f"#{x.task_id} {x.title} [{x.status}]"} for x in tasks]
-
     def get_comments_display(self, task_id: int):
         user_map = {u.user_id: u.display_name for u in self.master_repository.list_users()}
         return [
             {
-                "created_at": x.created_at,
-                "comment_by": user_map.get(x.comment_by, x.comment_by),
-                "comment_text": x.comment_text,
+                "日時": x.created_at,
+                "投稿者": user_map.get(x.comment_by, x.comment_by),
+                "コメント": x.comment_text,
             }
             for x in self.task_repository.list_comments(task_id)
         ]
