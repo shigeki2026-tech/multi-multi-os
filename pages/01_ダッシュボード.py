@@ -5,7 +5,7 @@ from src.ui.bootstrap import ensure_app_ready
 from src.ui.session import ensure_logged_in
 
 
-st.set_page_config(page_title="Dashboard", layout="wide")
+st.set_page_config(page_title="ダッシュボード", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
 
@@ -13,7 +13,7 @@ with service_scope() as container:
     dashboard = container.dashboard_service.get_dashboard_data(user["user_id"])
     apps = container.admin_service.list_apps()
 
-st.title("ホームダッシュボード")
+st.title("ダッシュボード")
 
 calendar_status = dashboard["calendar_status"]
 event_metric = "取得失敗" if calendar_status["error"] else len(dashboard["today_events"])
@@ -23,7 +23,7 @@ col1.metric("今日やること", dashboard["today_count"])
 col2.metric("未確認SV依頼", dashboard["unack_requests"])
 col3.metric("期限超過タスク", dashboard["overdue_count"])
 col4.metric("本日の予定", event_metric)
-col5.metric("最新LEOC応答率", dashboard["latest_leoc_rate"])
+col5.metric("最新の応答率", dashboard["latest_leoc_rate"])
 
 left, right = st.columns([1.4, 1])
 with left:
@@ -46,7 +46,7 @@ with right:
     else:
         st.caption("本日の予定はありません。")
 
-    st.subheader("LEOC速報")
+    st.subheader("応答率速報")
     if dashboard["latest_leoc"]:
         st.code(dashboard["latest_leoc"]["post_text"], language="text")
     else:

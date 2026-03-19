@@ -37,7 +37,7 @@ class ServiceContainer:
         self.admin_repository = AdminRepository(session)
 
         self.audit_service = AuditService(self.audit_repository)
-        self.master_service = MasterService(self.master_repository)
+        self.master_service = MasterService(self.master_repository, self.audit_service)
         self.task_service = TaskService(self.task_repository, self.master_repository, self.audit_service)
         self.request_service = RequestService(self.task_service, self.request_repository, self.master_repository)
         self.calendar_service = build_calendar_service()

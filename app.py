@@ -5,7 +5,7 @@ from src.ui.session import ensure_logged_in, logout
 
 
 st.set_page_config(
-    page_title="MultiMulti OS",
+    page_title="ホーム",
     page_icon="MM",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -13,8 +13,8 @@ st.set_page_config(
 
 ensure_app_ready()
 
-st.title("MultiMulti OS")
-st.caption("マルチ業務部向け業務ハブ MVP")
+st.title("ホーム")
+st.caption("マルチ業務部の業務ハブ")
 
 user = ensure_logged_in()
 
@@ -31,10 +31,11 @@ st.markdown(
     """
 ### 利用できる機能
 - ダッシュボードで今日やることを確認
-- タスクの登録、編集、担当変更、進捗更新
+- タスクの追加、編集、状態変更、優先度変更
 - SV依頼の作成と対応状況の管理
-- Google Calendar の予定参照
-- LEOC速報の作成
-- 日報の作成、プレビュー、Gmail送信、履歴確認
+- カレンダーの予定確認
+- 応答率速報の集計
+- 日報送信の作成、プレビュー、Gmail送信
+- 呼詳細作成の準備画面
 """
 )
