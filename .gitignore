@@ -1,0 +1,8 @@
+.venv/
+.env
+*.zip
+__pycache__/
+*.pyc
+Thumbs.db
+.vscode/
+.idea/
