@@ -54,6 +54,15 @@ class MasterRepository:
     def get_user(self, user_id: int):
         return self.session.get(User, user_id)
 
+    def get_user_by_google_email(self, google_email: str):
+        stmt = select(User).where(User.google_email == google_email)
+        return self.session.scalar(stmt)
+
+    def create_user(self, user: User):
+        self.session.add(user)
+        self.session.flush()
+        return user
+
     def update_user(self, user: User):
         self.session.add(user)
         self.session.flush()

@@ -110,11 +110,13 @@ def render_task_card(task: dict, actor_id: int):
             st.session_state["show_task_create"] = False
             st.rerun()
     with row[3]:
+        st.markdown("<div class='success-button-marker'></div>", unsafe_allow_html=True)
         if st.button("完了", key=f"done_{task['task_id']}", disabled=task["status"] == "完了"):
             with service_scope() as container:
                 container.task_service.change_status(task["task_id"], "完了", actor_id)
             st.rerun()
     with row[4]:
+        st.markdown("<div class='danger-button-marker'></div>", unsafe_allow_html=True)
         if st.button("取消", key=f"archive_{task['task_id']}", disabled=task["status"] == "取消"):
             with service_scope() as container:
                 container.task_service.archive_task(task["task_id"], actor_id)
