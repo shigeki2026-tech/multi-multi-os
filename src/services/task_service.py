@@ -26,21 +26,22 @@ class TaskService:
             assignee_user_id=assignee_user_id,
             include_requests=False,
             exclude_completed=filters.get("exclude_completed", False),
+            include_archived=filters.get("show_archived", False),
         )
         today = datetime.today().date()
         if filters.get("today_due"):
-            tasks = [x for x in tasks if x.due_date and x.due_date == today]
+            tasks = [task for task in tasks if task.due_date and task.due_date == today]
         if filters.get("overdue_only"):
-            tasks = [x for x in tasks if x.due_date and x.due_date < today and x.status != "完了"]
+            tasks = [task for task in tasks if task.due_date and task.due_date < today and task.status != "完了"]
 
-        users = {u.user_id: u.display_name for u in self.master_repository.list_users()}
-        projects = {p.project_id: p for p in self.master_repository.list_projects(active_only=False)}
+        users = {user.user_id: user.display_name for user in self.master_repository.list_users(active_only=False)}
+        projects = {project.project_id: project for project in self.master_repository.list_projects(active_only=False)}
         return [
             {
                 "task_id": task.task_id,
                 "title": task.title,
                 "project_name": projects.get(task.project_id).project_name if projects.get(task.project_id) else "-",
-                "project_color": projects.get(task.project_id).color if projects.get(task.project_id) else "#5B6CFF",
+                "project_color": projects.get(task.project_id).color if projects.get(task.project_id) else "#8E8E93",
                 "task_type_label": TASK_TYPE_LABELS.get(task.task_type, task.task_type),
                 "requester_name": users.get(task.requester_user_id, "-"),
                 "assignee_name": users.get(task.assignee_user_id, "-"),
@@ -48,11 +49,14 @@ class TaskService:
                 "status": task.status,
                 "due_date": task.due_date,
                 "needs_confirmation": task.needs_confirmation,
+                "is_active": task.is_active,
+                "deleted_at": task.deleted_at,
             }
             for task in tasks
         ]
 
     def create_task(self, actor_id: int, payload: dict):
+        payload.setdefault("is_active", True)
         task = Task(**payload)
         self.task_repository.create_task(task)
         self.audit_service.log("tasks", task.task_id, "create", actor_id, after=task)
@@ -79,6 +83,17 @@ class TaskService:
         self.audit_service.log("tasks", task.task_id, "status_change", actor_id, before=_DictProxy(before), after=task)
         return task
 
+    def archive_task(self, task_id: int, actor_id: int):
+        task = self.task_repository.get_task(task_id)
+        before = deepcopy(to_dict(task))
+        task.status = "取消"
+        task.is_active = False
+        task.deleted_at = datetime.utcnow()
+        task.deleted_by = actor_id
+        self.task_repository.session.flush()
+        self.audit_service.log("tasks", task.task_id, "archive", actor_id, before=_DictProxy(before), after=task)
+        return task
+
     def add_comment(self, task_id: int, actor_id: int, comment_text: str):
         comment = TaskComment(task_id=task_id, comment_by=actor_id, comment_text=comment_text)
         self.task_repository.add_comment(comment)
@@ -87,7 +102,7 @@ class TaskService:
 
     def get_task_detail(self, task_id: int):
         task = self.task_repository.get_task(task_id)
-        users = {u.user_id: u.display_name for u in self.master_repository.list_users()}
+        users = {user.user_id: user.display_name for user in self.master_repository.list_users(active_only=False)}
         return {
             "task_id": task.task_id,
             "task_type": task.task_type,
@@ -108,17 +123,19 @@ class TaskService:
             "requester_name": users.get(task.requester_user_id, "-"),
             "assignee_user_id": task.assignee_user_id,
             "assignee_name": users.get(task.assignee_user_id, "-"),
+            "is_active": task.is_active,
+            "deleted_at": task.deleted_at,
         }
 
     def get_comments_display(self, task_id: int):
-        user_map = {u.user_id: u.display_name for u in self.master_repository.list_users()}
+        user_map = {user.user_id: user.display_name for user in self.master_repository.list_users(active_only=False)}
         return [
             {
-                "日時": x.created_at,
-                "投稿者": user_map.get(x.comment_by, x.comment_by),
-                "コメント": x.comment_text,
+                "日時": item.created_at,
+                "コメント者": user_map.get(item.comment_by, item.comment_by),
+                "コメント": item.comment_text,
             }
-            for x in self.task_repository.list_comments(task_id)
+            for item in self.task_repository.list_comments(task_id)
         ]
 
 

@@ -62,7 +62,7 @@ class RequestService:
         return self.task_service.get_comments_display(task_id)
 
     def _to_row(self, task):
-        users = {user.user_id: user.display_name for user in self.master_repository.list_users()}
+        users = {user.user_id: user.display_name for user in self.master_repository.list_users(active_only=False)}
         return {
             "task_id": task.task_id,
             "title": task.title,

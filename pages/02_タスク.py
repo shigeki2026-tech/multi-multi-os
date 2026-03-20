@@ -21,7 +21,7 @@ TYPE_COLORS = {
     "個人": "#4F8CFF",
     "チーム": "#34C759",
     "引継ぎ": "#8E8E93",
-    "SV依頼": "#FF5A5F",
+    "SV依頼": "#64748B",
     "定期": "#5E5CE6",
 }
 PRIORITY_COLORS = {"高": "#FF5A5F", "中": "#FF9F0A", "低": "#8E8E93"}
@@ -30,8 +30,8 @@ STATUS_COLORS = {
     "確認待ち": "#FF9F0A",
     "進行中": "#4F8CFF",
     "保留": "#6E56CF",
-    "完了": "#34C759",
-    "取消": "#7D7D84",
+    "完了": "#16A34A",
+    "取消": "#DC2626",
 }
 
 
@@ -41,9 +41,13 @@ def badge(label: str, color: str, filled: bool = True) -> str:
     else:
         style = f"background:#ffffff;color:{color};border:1px solid {color};"
     return (
-        f"<span style='display:inline-block;padding:0.12rem 0.5rem;margin-right:0.28rem;"
+        f"<span style='display:inline-block;padding:0.12rem 0.5rem;margin-right:0.25rem;"
         f"border-radius:999px;font-size:0.76rem;font-weight:700;{style}'>{label}</span>"
     )
+
+
+def color_bar(color: str) -> str:
+    return f"<span style='display:inline-block;width:8px;height:64px;border-radius:999px;background:{color};'></span>"
 
 
 def format_due_date(value) -> str:
@@ -56,32 +60,29 @@ def build_summary(tasks: list[dict]) -> dict:
         "未着手": sum(1 for task in tasks if task["status"] == "未着手"),
         "今日期限": sum(1 for task in tasks if task["due_date"] == today),
         "期限超過": sum(
-            1
-            for task in tasks
-            if task["due_date"] and task["due_date"] < today and task["status"] != "完了"
+            1 for task in tasks if task["due_date"] and task["due_date"] < today and task["status"] not in {"完了", "取消"}
         ),
         "要確認": sum(1 for task in tasks if task["needs_confirmation"]),
     }
 
 
-def summary_card(title: str, value: int, tone: str):
+def render_summary_card(title: str, value: int):
     with st.container(border=True):
         st.caption(title)
         st.metric(title, value, label_visibility="collapsed")
 
 
-def render_task_card(task: dict, is_editing: bool):
-    overdue = task["due_date"] and task["due_date"] < date.today() and task["status"] != "完了"
-    title_prefix = "編集中: " if is_editing else ""
+def render_task_card(task: dict, actor_id: int):
+    is_editing = st.session_state.get("editing_task_id") == task["task_id"]
+    overdue = task["due_date"] and task["due_date"] < date.today() and task["status"] not in {"完了", "取消"}
 
-    card_cols = st.columns([0.18, 5.5, 0.9, 0.9], gap="small")
-    with card_cols[0]:
-        st.markdown(
-            f"<div style='background:{task['project_color']};width:8px;height:72px;border-radius:999px;margin-top:0.1rem;'></div>",
-            unsafe_allow_html=True,
-        )
-    with card_cols[1]:
-        st.markdown(f"**{title_prefix}{task['title']}**")
+    row = st.columns([0.18, 5.2, 0.85, 0.85, 0.85], gap="small")
+    with row[0]:
+        st.markdown(color_bar(task["project_color"]), unsafe_allow_html=True)
+    with row[1]:
+        if is_editing:
+            st.caption("編集中")
+        st.markdown(f"**{task['title']}**")
         st.markdown(
             " ".join(
                 [
@@ -102,17 +103,23 @@ def render_task_card(task: dict, is_editing: bool):
             meta.append("期限超過")
         st.caption(" / ".join(meta))
         if task["needs_confirmation"]:
-            st.markdown(badge("要確認", "#D9363E"), unsafe_allow_html=True)
-    with card_cols[2]:
-        if st.button("編集", key=f"edit_{task['task_id']}", use_container_width=True):
+            st.markdown(badge("要確認", "#DC2626"), unsafe_allow_html=True)
+    with row[2]:
+        if st.button("編集", key=f"edit_{task['task_id']}"):
             st.session_state["editing_task_id"] = task["task_id"]
             st.session_state["show_task_create"] = False
             st.rerun()
-    with card_cols[3]:
-        done_disabled = task["status"] == "完了"
-        if st.button("完了", key=f"done_{task['task_id']}", use_container_width=True, disabled=done_disabled):
+    with row[3]:
+        if st.button("完了", key=f"done_{task['task_id']}", disabled=task["status"] == "完了"):
             with service_scope() as container:
-                container.task_service.change_status(task["task_id"], "完了", st.session_state["current_user"]["user_id"])
+                container.task_service.change_status(task["task_id"], "完了", actor_id)
+            st.rerun()
+    with row[4]:
+        if st.button("取消", key=f"archive_{task['task_id']}", disabled=task["status"] == "取消"):
+            with service_scope() as container:
+                container.task_service.archive_task(task["task_id"], actor_id)
+            if st.session_state.get("editing_task_id") == task["task_id"]:
+                st.session_state.pop("editing_task_id", None)
             st.rerun()
 
 
@@ -122,7 +129,7 @@ user = ensure_logged_in()
 render_sidebar(user)
 
 st.title("タスク")
-st.caption("一覧を見ながら、そのまま右側で更新できる業務向けタスク画面です。")
+st.caption("一覧を見ながら編集しやすい運用向けUIです。")
 
 with service_scope() as container:
     user_options = container.master_service.user_options()
@@ -131,12 +138,13 @@ with service_scope() as container:
 
 with st.container(border=True):
     st.markdown("#### 絞り込み")
-    f1, f2, f3, f4 = st.columns(4)
+    f1, f2, f3, f4, f5 = st.columns(5)
     filters = {
         "mine_only": f1.checkbox("自分のタスクのみ", value=True),
         "today_due": f2.checkbox("今日期限"),
         "overdue_only": f3.checkbox("期限超過のみ"),
         "exclude_completed": f4.checkbox("完了を除外", value=True),
+        "show_archived": f5.checkbox("取消済みを表示"),
     }
 
 with service_scope() as container:
@@ -145,21 +153,26 @@ with service_scope() as container:
 summary = build_summary(tasks)
 sum_cols = st.columns(4)
 with sum_cols[0]:
-    summary_card("未着手", summary["未着手"], "neutral")
+    render_summary_card("未着手", summary["未着手"])
 with sum_cols[1]:
-    summary_card("今日期限", summary["今日期限"], "info")
+    render_summary_card("今日期限", summary["今日期限"])
 with sum_cols[2]:
-    summary_card("期限超過", summary["期限超過"], "danger")
+    render_summary_card("期限超過", summary["期限超過"])
 with sum_cols[3]:
-    summary_card("要確認", summary["要確認"], "warn")
+    render_summary_card("要確認", summary["要確認"])
 
-list_col, panel_col = st.columns([1.45, 1], gap="large")
+has_panel = st.session_state.get("show_task_create", False) or bool(st.session_state.get("editing_task_id"))
+if has_panel:
+    list_col, panel_col = st.columns([1.45, 1], gap="large")
+else:
+    list_col = st.container()
+    panel_col = None
 
 with list_col:
-    header_cols = st.columns([1.1, 0.7])
-    header_cols[0].subheader("タスク一覧")
-    if header_cols[1].button("+ 新規作成", use_container_width=True, type="primary"):
-        st.session_state["show_task_create"] = not st.session_state.get("show_task_create", False)
+    top_cols = st.columns([1.2, 0.8])
+    top_cols[0].subheader("タスク一覧")
+    if top_cols[1].button("+ 新規作成", type="primary"):
+        st.session_state["show_task_create"] = True
         st.session_state.pop("editing_task_id", None)
         st.rerun()
 
@@ -168,191 +181,179 @@ with list_col:
 
     for task in tasks:
         with st.container(border=True):
-            render_task_card(task, st.session_state.get("editing_task_id") == task["task_id"])
+            render_task_card(task, user["user_id"])
 
-with panel_col:
-    editing_task_id = st.session_state.get("editing_task_id")
+if panel_col:
+    with panel_col:
+        editing_task_id = st.session_state.get("editing_task_id")
 
-    if st.session_state.get("show_task_create", False):
-        st.info("新規作成パネル")
-        with st.container(border=True):
-            with st.form("create_task_form", clear_on_submit=True):
-                c1, c2 = st.columns([1.2, 0.8])
-                c1.markdown("### 新規タスク")
-                cancel_create = c2.form_submit_button("キャンセル", use_container_width=True)
-                title = st.text_input("件名")
-                description = st.text_area("内容", height=110)
+        if st.session_state.get("show_task_create", False):
+            st.info("新規作成モード")
+            with st.container(border=True):
+                with st.form("create_task_form", clear_on_submit=True):
+                    top = st.columns([1.4, 0.8])
+                    top[0].markdown("### 新規タスク")
+                    close_create = top[1].form_submit_button("閉じる")
 
-                g1, g2, g3, g4 = st.columns(4)
-                task_type = g1.selectbox("種別", options=TASK_TYPES, format_func=lambda x: x[1])
-                priority = g2.selectbox("優先度", PRIORITIES)
-                status = g3.selectbox("状態", STATUSES, index=0)
-                assignee = g4.selectbox("担当者", options=user_options, format_func=lambda x: x["label"])
+                    title = st.text_input("件名")
+                    description = st.text_area("内容", height=110)
 
-                g5, g6, g7 = st.columns(3)
-                team = g5.selectbox("チーム", options=team_options, format_func=lambda x: x["label"])
-                if project_options:
-                    project = g6.selectbox("プロジェクト", options=project_options, format_func=lambda x: x["label"])
-                else:
-                    project = None
-                    g6.caption("有効なプロジェクトがありません")
-                due_date = g7.date_input("期限", value=None)
+                    r1 = st.columns(4)
+                    task_type = r1[0].selectbox("種別", options=TASK_TYPES, format_func=lambda x: x[1])
+                    priority = r1[1].selectbox("優先度", PRIORITIES)
+                    status = r1[2].selectbox("状態", STATUSES, index=0)
+                    assignee = r1[3].selectbox("担当者", options=user_options, format_func=lambda x: x["label"])
 
-                g8, g9 = st.columns([3, 1])
-                related_link = g8.text_input("関連リンク")
-                needs_confirmation = g9.checkbox("要確認")
+                    r2 = st.columns(3)
+                    team = r2[0].selectbox("チーム", options=team_options, format_func=lambda x: x["label"])
+                    project = r2[1].selectbox("プロジェクト", options=project_options, format_func=lambda x: x["label"])
+                    due_date = r2[2].date_input("期限", value=None)
 
-                save_create = st.form_submit_button("保存", use_container_width=True, type="primary")
+                    r3 = st.columns([3, 1])
+                    related_link = r3[0].text_input("関連リンク")
+                    needs_confirmation = r3[1].checkbox("要確認")
 
-                if cancel_create:
-                    st.session_state["show_task_create"] = False
-                    st.rerun()
+                    save_create = st.form_submit_button("保存", type="primary")
 
-                if save_create:
-                    if not title.strip():
-                        st.warning("件名を入力してください。")
-                    elif not project:
-                        st.warning("有効なプロジェクトを選択してください。")
-                    else:
+                    if close_create:
+                        st.session_state["show_task_create"] = False
+                        st.rerun()
+                    if save_create:
+                        if not title.strip():
+                            st.warning("件名を入力してください。")
+                        else:
+                            with service_scope() as container:
+                                container.task_service.create_task(
+                                    actor_id=user["user_id"],
+                                    payload={
+                                        "task_type": task_type[0],
+                                        "title": title.strip(),
+                                        "description": description.strip(),
+                                        "requester_user_id": user["user_id"],
+                                        "assignee_user_id": assignee["value"],
+                                        "team_id": team["value"],
+                                        "project_id": project["value"],
+                                        "priority": priority,
+                                        "status": status,
+                                        "due_date": due_date,
+                                        "requested_date": None,
+                                        "related_link": related_link.strip(),
+                                        "needs_confirmation": needs_confirmation,
+                                    },
+                                )
+                            st.session_state["show_task_create"] = False
+                            st.success("タスクを登録しました。")
+                            st.rerun()
+
+        elif editing_task_id:
+            with service_scope() as container:
+                detail = container.task_service.get_task_detail(editing_task_id)
+
+            current_project = next(
+                (item for item in project_options if item["value"] == detail["project_id"]),
+                {"label": "未設定", "color": "#8E8E93", "value": detail["project_id"]},
+            )
+            st.info("編集モード")
+            st.markdown(
+                " ".join(
+                    [
+                        badge("編集中", current_project["color"], filled=False),
+                        badge(current_project["label"], current_project["color"], filled=False),
+                    ]
+                ),
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"### 現在編集中: {detail['title']}")
+            st.caption(f"依頼元: {detail['requester_name']} / 担当: {detail['assignee_name']}")
+
+            with st.container(border=True):
+                with st.form("edit_task_form"):
+                    action = st.columns(3)
+                    save_clicked = action[0].form_submit_button("保存", type="primary")
+                    complete_clicked = action[1].form_submit_button("完了")
+                    cancel_clicked = action[2].form_submit_button("キャンセル")
+
+                    title = st.text_input("件名", value=detail["title"])
+                    description = st.text_area("内容", value=detail["description"] or "", height=110)
+
+                    r1 = st.columns(4)
+                    task_type = r1[0].selectbox(
+                        "種別",
+                        options=TASK_TYPES,
+                        index=next((idx for idx, item in enumerate(TASK_TYPES) if item[0] == detail["task_type"]), 0),
+                        format_func=lambda x: x[1],
+                    )
+                    priority = r1[1].selectbox("優先度", PRIORITIES, index=PRIORITIES.index(detail["priority"]))
+                    status = r1[2].selectbox("状態", STATUSES, index=STATUSES.index(detail["status"]))
+                    assignee = r1[3].selectbox(
+                        "担当者",
+                        options=user_options,
+                        index=next((idx for idx, item in enumerate(user_options) if item["value"] == detail["assignee_user_id"]), 0),
+                        format_func=lambda x: x["label"],
+                    )
+
+                    r2 = st.columns(3)
+                    team = r2[0].selectbox(
+                        "チーム",
+                        options=team_options,
+                        index=next((idx for idx, item in enumerate(team_options) if item["value"] == detail["team_id"]), 0),
+                        format_func=lambda x: x["label"],
+                    )
+                    project = r2[1].selectbox(
+                        "プロジェクト",
+                        options=project_options,
+                        index=next((idx for idx, item in enumerate(project_options) if item["value"] == detail["project_id"]), 0),
+                        format_func=lambda x: x["label"],
+                    )
+                    due_date = r2[2].date_input("期限", value=detail["due_date"])
+
+                    r3 = st.columns([3, 1])
+                    related_link = r3[0].text_input("関連リンク", value=detail["related_link"] or "")
+                    needs_confirmation = r3[1].checkbox("要確認", value=detail["needs_confirmation"])
+
+                    if cancel_clicked:
+                        st.session_state.pop("editing_task_id", None)
+                        st.rerun()
+                    if complete_clicked:
                         with service_scope() as container:
-                            container.task_service.create_task(
+                            container.task_service.change_status(editing_task_id, "完了", user["user_id"])
+                        st.success("タスクを完了にしました。")
+                        st.rerun()
+                    if save_clicked:
+                        with service_scope() as container:
+                            container.task_service.update_task(
+                                task_id=editing_task_id,
                                 actor_id=user["user_id"],
                                 payload={
                                     "task_type": task_type[0],
                                     "title": title.strip(),
                                     "description": description.strip(),
-                                    "requester_user_id": user["user_id"],
+                                    "status": status,
+                                    "priority": priority,
                                     "assignee_user_id": assignee["value"],
                                     "team_id": team["value"],
                                     "project_id": project["value"],
-                                    "priority": priority,
-                                    "status": status,
                                     "due_date": due_date,
-                                    "requested_date": None,
                                     "related_link": related_link.strip(),
                                     "needs_confirmation": needs_confirmation,
                                 },
                             )
-                        st.session_state["show_task_create"] = False
-                        st.success("タスクを登録しました。")
+                        st.success("タスクを更新しました。")
                         st.rerun()
 
-    elif editing_task_id:
-        with service_scope() as container:
-            detail = container.task_service.get_task_detail(editing_task_id)
-
-        current_project = next(
-            (item for item in project_options if item["value"] == detail["project_id"]),
-            {"label": "未設定", "color": "#8E8E93", "value": detail["project_id"]},
-        )
-
-        st.markdown(
-            " ".join(
-                [
-                    badge("編集中", current_project["color"], filled=False),
-                    badge(current_project["label"], current_project["color"], filled=False),
-                ]
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"### 現在編集中: {detail['title']}")
-        st.caption(f"依頼元: {detail['requester_name']} / 担当: {detail['assignee_name']}")
-
-        with st.container(border=True):
-            with st.form("edit_task_form"):
-                action_cols = st.columns(3)
-                save_clicked = action_cols[0].form_submit_button("保存", use_container_width=True, type="primary")
-                complete_clicked = action_cols[1].form_submit_button("完了", use_container_width=True)
-                cancel_clicked = action_cols[2].form_submit_button("キャンセル", use_container_width=True)
-
-                title = st.text_input("件名", value=detail["title"])
-                description = st.text_area("内容", value=detail["description"] or "", height=110)
-
-                g1, g2, g3, g4 = st.columns(4)
-                task_type = g1.selectbox(
-                    "種別",
-                    options=TASK_TYPES,
-                    index=next((idx for idx, item in enumerate(TASK_TYPES) if item[0] == detail["task_type"]), 0),
-                    format_func=lambda x: x[1],
-                )
-                priority = g2.selectbox("優先度", PRIORITIES, index=PRIORITIES.index(detail["priority"]))
-                status = g3.selectbox("状態", STATUSES, index=STATUSES.index(detail["status"]))
-                assignee = g4.selectbox(
-                    "担当者",
-                    options=user_options,
-                    index=next((idx for idx, item in enumerate(user_options) if item["value"] == detail["assignee_user_id"]), 0),
-                    format_func=lambda x: x["label"],
-                )
-
-                g5, g6, g7 = st.columns(3)
-                team = g5.selectbox(
-                    "チーム",
-                    options=team_options,
-                    index=next((idx for idx, item in enumerate(team_options) if item["value"] == detail["team_id"]), 0),
-                    format_func=lambda x: x["label"],
-                )
-                project = g6.selectbox(
-                    "プロジェクト",
-                    options=project_options,
-                    index=next((idx for idx, item in enumerate(project_options) if item["value"] == detail["project_id"]), 0),
-                    format_func=lambda x: x["label"],
-                )
-                due_date = g7.date_input("期限", value=detail["due_date"])
-
-                g8, g9 = st.columns([3, 1])
-                related_link = g8.text_input("関連リンク", value=detail["related_link"] or "")
-                needs_confirmation = g9.checkbox("要確認", value=detail["needs_confirmation"])
-
-                if cancel_clicked:
-                    st.session_state.pop("editing_task_id", None)
-                    st.rerun()
-
-                if complete_clicked:
-                    with service_scope() as container:
-                        container.task_service.change_status(editing_task_id, "完了", user["user_id"])
-                    st.success("タスクを完了にしました。")
-                    st.rerun()
-
-                if save_clicked:
-                    with service_scope() as container:
-                        container.task_service.update_task(
-                            task_id=editing_task_id,
-                            actor_id=user["user_id"],
-                            payload={
-                                "task_type": task_type[0],
-                                "title": title.strip(),
-                                "description": description.strip(),
-                                "status": status,
-                                "priority": priority,
-                                "assignee_user_id": assignee["value"],
-                                "team_id": team["value"],
-                                "project_id": project["value"],
-                                "due_date": due_date,
-                                "related_link": related_link.strip(),
-                                "needs_confirmation": needs_confirmation,
-                            },
-                        )
-                    st.success("タスクを更新しました。")
-                    st.rerun()
-
-        st.markdown("#### コメント")
-        with service_scope() as container:
-            comments = container.task_service.get_comments_display(editing_task_id)
-        if comments:
-            st.dataframe(comments, use_container_width=True, hide_index=True)
-        else:
-            st.caption("コメントはまだありません。")
-
-        comment = st.text_area("コメント追加", height=90)
-        if st.button("コメントを保存", key="add_task_comment", use_container_width=True):
-            if comment.strip():
-                with service_scope() as container:
-                    container.task_service.add_comment(editing_task_id, user["user_id"], comment.strip())
-                st.rerun()
+            st.markdown("#### コメント")
+            with service_scope() as container:
+                comments = container.task_service.get_comments_display(editing_task_id)
+            if comments:
+                st.dataframe(comments, use_container_width=True, hide_index=True)
             else:
-                st.warning("コメントを入力してください。")
+                st.caption("コメントはまだありません。")
 
-    else:
-        with st.container(border=True):
-            st.subheader("操作パネル")
-            st.caption("左のカードから編集を選ぶか、上の「+ 新規作成」で新しいタスクを追加してください。")
+            comment = st.text_area("コメント追加", height=90)
+            if st.button("コメントを保存"):
+                if comment.strip():
+                    with service_scope() as container:
+                        container.task_service.add_comment(editing_task_id, user["user_id"], comment.strip())
+                    st.rerun()
+                else:
+                    st.warning("コメントを入力してください。")
