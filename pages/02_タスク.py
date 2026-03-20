@@ -46,8 +46,11 @@ def badge(label: str, color: str, filled: bool = True) -> str:
     )
 
 
-def color_bar(color: str) -> str:
-    return f"<span style='display:inline-block;width:8px;height:64px;border-radius:999px;background:{color};'></span>"
+def project_chip(color: str) -> str:
+    return (
+        f"<span style='display:inline-block;width:12px;height:12px;border-radius:999px;"
+        f"background:{color};border:1px solid rgba(0,0,0,0.15);margin-right:0.4rem;vertical-align:middle;'></span>"
+    )
 
 
 def format_due_date(value) -> str:
@@ -76,17 +79,28 @@ def render_task_card(task: dict, actor_id: int):
     is_editing = st.session_state.get("editing_task_id") == task["task_id"]
     overdue = task["due_date"] and task["due_date"] < date.today() and task["status"] not in {"完了", "取消"}
 
-    row = st.columns([0.18, 5.2, 0.85, 0.85, 0.85], gap="small")
-    with row[0]:
-        st.markdown(color_bar(task["project_color"]), unsafe_allow_html=True)
-    with row[1]:
-        if is_editing:
-            st.caption("編集中")
-        st.markdown(f"**{task['title']}**")
+    info_col, action_col = st.columns([4, 1], gap="medium")
+
+    with info_col:
+        title_left, title_right = st.columns([8, 1], gap="small")
+        with title_left:
+            title_html = (
+                f"{project_chip(task['project_color'])}"
+                f"<span style='font-weight:700;font-size:1rem;color:#111827;'>{task['title']}</span>"
+            )
+            st.markdown(title_html, unsafe_allow_html=True)
+        with title_right:
+            if task["needs_confirmation"]:
+                st.markdown(
+                    "<div style='text-align:right;font-size:1rem;color:#DC2626;font-weight:700;'>⚠ 要確認</div>",
+                    unsafe_allow_html=True,
+                )
+            elif is_editing:
+                st.caption("編集中")
+
         st.markdown(
             " ".join(
                 [
-                    badge(task["project_name"], task["project_color"], filled=False),
                     badge(task["task_type_label"], TYPE_COLORS.get(task["task_type_label"], "#8E8E93")),
                     badge(task["priority"], PRIORITY_COLORS.get(task["priority"], "#8E8E93")),
                     badge(task["status"], STATUS_COLORS.get(task["status"], "#8E8E93")),
@@ -94,6 +108,7 @@ def render_task_card(task: dict, actor_id: int):
             ),
             unsafe_allow_html=True,
         )
+
         meta = [
             f"依頼元: {task['requester_name']}",
             f"担当: {task['assignee_name']}",
@@ -102,22 +117,31 @@ def render_task_card(task: dict, actor_id: int):
         if overdue:
             meta.append("期限超過")
         st.caption(" / ".join(meta))
-        if task["needs_confirmation"]:
-            st.markdown(badge("要確認", "#DC2626"), unsafe_allow_html=True)
-    with row[2]:
-        if st.button("編集", key=f"edit_{task['task_id']}"):
+
+    with action_col:
+        if st.button("編集", key=f"edit_{task['task_id']}", use_container_width=True):
             st.session_state["editing_task_id"] = task["task_id"]
             st.session_state["show_task_create"] = False
             st.rerun()
-    with row[3]:
+
         st.markdown("<div class='success-button-marker'></div>", unsafe_allow_html=True)
-        if st.button("完了", key=f"done_{task['task_id']}", disabled=task["status"] == "完了"):
+        if st.button(
+            "完了",
+            key=f"done_{task['task_id']}",
+            disabled=task["status"] == "完了",
+            use_container_width=True,
+        ):
             with service_scope() as container:
                 container.task_service.change_status(task["task_id"], "完了", actor_id)
             st.rerun()
-    with row[4]:
+
         st.markdown("<div class='danger-button-marker'></div>", unsafe_allow_html=True)
-        if st.button("取消", key=f"archive_{task['task_id']}", disabled=task["status"] == "取消"):
+        if st.button(
+            "取消",
+            key=f"archive_{task['task_id']}",
+            disabled=task["status"] == "取消",
+            use_container_width=True,
+        ):
             with service_scope() as container:
                 container.task_service.archive_task(task["task_id"], actor_id)
             if st.session_state.get("editing_task_id") == task["task_id"]:
@@ -171,12 +195,14 @@ else:
     panel_col = None
 
 with list_col:
-    top_cols = st.columns([1.2, 0.8])
-    top_cols[0].subheader("タスク一覧")
-    if top_cols[1].button("+ 新規作成", type="primary"):
-        st.session_state["show_task_create"] = True
-        st.session_state.pop("editing_task_id", None)
-        st.rerun()
+    head_col, action_head_col = st.columns([8, 2], gap="small")
+    with head_col:
+        st.subheader("タスク一覧")
+    with action_head_col:
+        if st.button("+ 新規作成", type="primary", use_container_width=True):
+            st.session_state["show_task_create"] = True
+            st.session_state.pop("editing_task_id", None)
+            st.rerun()
 
     if not tasks:
         st.info("表示対象のタスクはありません。")
