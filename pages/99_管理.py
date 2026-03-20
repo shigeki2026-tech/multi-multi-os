@@ -50,6 +50,51 @@ team_map = {row["team_id"]: row for row in team_rows}
 
 st.subheader("ユーザーマスタ")
 with st.container(border=True):
+    top_cols = st.columns([1.2, 4.8])
+    if top_cols[0].button("+ ユーザー追加", type="primary"):
+        st.session_state["show_user_create"] = not st.session_state.get("show_user_create", False)
+        st.session_state.pop("editing_user_id", None)
+        st.rerun()
+    top_cols[1].caption("表示名、権限、所属チーム、有効無効を管理します。Googleメールは read-only です。")
+
+    if st.session_state.get("show_user_create", False):
+        with st.form("create_user_form", clear_on_submit=True):
+            st.markdown("### 新規ユーザー")
+            display_name = st.text_input("表示名")
+            google_email = st.text_input("Googleメール")
+            row1 = st.columns(3)
+            role = row1[0].selectbox("権限", ROLES, index=1)
+            team = row1[1].selectbox("所属チーム", options=team_options, format_func=lambda item: item["label"])
+            is_active = row1[2].checkbox("有効", value=True)
+            action = st.columns(2)
+            save_user_create = action[0].form_submit_button("追加する", type="primary")
+            close_user_create = action[1].form_submit_button("閉じる")
+            if close_user_create:
+                st.session_state["show_user_create"] = False
+                st.rerun()
+            if save_user_create:
+                if not display_name.strip() or not google_email.strip():
+                    st.warning("表示名と Googleメール を入力してください。")
+                else:
+                    try:
+                        with service_scope() as container:
+                            container.master_service.create_user(
+                                user["user_id"],
+                                {
+                                    "display_name": display_name.strip(),
+                                    "google_email": google_email.strip(),
+                                    "role": role,
+                                    "team_id": team["value"],
+                                    "is_active": is_active,
+                                },
+                            )
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        st.session_state["show_user_create"] = False
+                        st.success("ユーザーを追加しました。")
+                        st.rerun()
+
     header = st.columns([1.4, 1.6, 0.9, 1.3, 0.9, 1.1, 0.8])
     labels = ["表示名", "Googleメール", "権限", "所属チーム", "状態", "最終ログイン", "操作"]
     for col, label in zip(header, labels):
@@ -71,6 +116,7 @@ with st.container(border=True):
         cols[5].caption(str(row["last_login_at"] or "-"))
         if cols[6].button("編集", key=f"edit_user_{row['user_id']}"):
             st.session_state["editing_user_id"] = row["user_id"]
+            st.session_state["show_user_create"] = False
             st.rerun()
 
     editing_user_id = st.session_state.get("editing_user_id")

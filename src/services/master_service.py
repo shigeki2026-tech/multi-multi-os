@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from src.models.entities import Project, Team
+from src.models.entities import Project, Team, User
 from src.utils.serializers import to_dict
 
 
@@ -43,6 +43,23 @@ class MasterService:
         self.master_repository.update_user(user)
         if self.audit_service:
             self.audit_service.log("users", user.user_id, "update", actor_id, before=_DictProxy(before), after=user)
+        return user
+
+    def create_user(self, actor_id: int, payload: dict):
+        existing = self.master_repository.get_user_by_google_email(payload["google_email"])
+        if existing:
+            raise ValueError("同じ Googleメール のユーザーが既に存在します。")
+        user = User(
+            google_email=payload["google_email"],
+            email=payload["google_email"],
+            display_name=payload["display_name"],
+            role=payload["role"],
+            team_id=payload["team_id"],
+            is_active=payload["is_active"],
+        )
+        self.master_repository.create_user(user)
+        if self.audit_service:
+            self.audit_service.log("users", user.user_id, "create", actor_id, after=user)
         return user
 
     def team_options(self):

@@ -92,7 +92,7 @@ def ensure_admin(user=None):
 def render_sidebar(user: dict):
     _apply_layout_style()
     with st.sidebar:
-        st.markdown("### 業務メニュー")
+        st.markdown("### マルチマルチ管理メニュー")
         with st.container(border=True):
             st.markdown(f"**{user['display_name']}**")
             role_color = "#2563EB" if user["role"] == "admin" else "#64748B"
@@ -144,6 +144,19 @@ def _apply_layout_style():
             border-color: #94A3B8;
             color: #111827;
         }
+        .stFormSubmitButton button {
+            width: auto !important;
+            min-width: 96px;
+            border-radius: 10px;
+            border: 1px solid #CBD5E1;
+            background: #FFFFFF;
+            color: #111827;
+            box-shadow: none;
+        }
+        .stFormSubmitButton button:hover {
+            border-color: #94A3B8;
+            color: #111827;
+        }
         .stButton button[kind="primary"] {
             background: #2563EB;
             color: #FFFFFF;
@@ -154,10 +167,44 @@ def _apply_layout_style():
             border-color: #1D4ED8;
             color: #FFFFFF;
         }
+        .stFormSubmitButton button[kind="primary"] {
+            background: #2563EB !important;
+            color: #FFFFFF !important;
+            border-color: #2563EB !important;
+        }
+        .stFormSubmitButton button[kind="primary"]:hover {
+            background: #1D4ED8 !important;
+            border-color: #1D4ED8 !important;
+            color: #FFFFFF !important;
+        }
         [data-testid="stSidebar"] .stButton:last-of-type button {
             background: #374151;
             color: #F9FAFB;
             border-color: #4B5563;
+        }
+        .element-container:has(.success-button-marker) + div .stButton button,
+        .element-container:has(.success-button-marker) + div .stFormSubmitButton button {
+            background: #16A34A !important;
+            color: #FFFFFF !important;
+            border-color: #16A34A !important;
+        }
+        .element-container:has(.success-button-marker) + div .stButton button:hover,
+        .element-container:has(.success-button-marker) + div .stFormSubmitButton button:hover {
+            background: #15803D !important;
+            color: #FFFFFF !important;
+            border-color: #15803D !important;
+        }
+        .element-container:has(.danger-button-marker) + div .stButton button,
+        .element-container:has(.danger-button-marker) + div .stFormSubmitButton button {
+            background: #DC2626 !important;
+            color: #FFFFFF !important;
+            border-color: #DC2626 !important;
+        }
+        .element-container:has(.danger-button-marker) + div .stButton button:hover,
+        .element-container:has(.danger-button-marker) + div .stFormSubmitButton button:hover {
+            background: #B91C1C !important;
+            color: #FFFFFF !important;
+            border-color: #B91C1C !important;
         }
         </style>
         """,
