@@ -2,14 +2,15 @@ import streamlit as st
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in
+from src.ui.session import ensure_logged_in, render_sidebar
 
 
 PRIORITIES = ["高", "中", "低"]
 
-st.set_page_config(page_title="SV Requests", layout="wide")
+st.set_page_config(page_title="SV依頼", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
+render_sidebar(user)
 
 st.title("SV依頼")
 
@@ -31,7 +32,7 @@ with st.form("create_request_form", clear_on_submit=True):
     due_date = c6.date_input("期限日", value=None)
     needs_confirmation = c7.checkbox("確認が必要", value=True)
     related_link = st.text_input("関連リンク")
-    submit = st.form_submit_button("依頼作成", use_container_width=True)
+    submit = st.form_submit_button("依頼を作成", use_container_width=True, type="primary")
     if submit and title:
         with service_scope() as container:
             container.request_service.create_request(
@@ -70,7 +71,7 @@ with right:
     st.subheader("自分が出した依頼")
     st.dataframe(sent, use_container_width=True, hide_index=True)
 
-selected = st.selectbox("操作対象依頼", options=request_options, format_func=lambda x: x["label"] if x else "", index=None)
+selected = st.selectbox("操作対象の依頼", options=request_options, format_func=lambda x: x["label"] if x else "", index=None)
 if selected:
     with service_scope() as container:
         detail = container.request_service.get_request_detail(selected["value"])
@@ -98,8 +99,8 @@ if selected:
 
     st.markdown("#### コメント履歴")
     st.dataframe(comments, use_container_width=True, hide_index=True)
-    comment = st.text_area("コメント内容", key=f"req_comment_{selected['value']}")
-    if st.button("コメント追加", use_container_width=True) and comment:
+    comment = st.text_area("コメント追加", key=f"req_comment_{selected['value']}")
+    if st.button("コメントを保存", use_container_width=True) and comment:
         with service_scope() as container:
             container.request_service.add_comment(selected["value"], user["user_id"], comment)
         st.rerun()

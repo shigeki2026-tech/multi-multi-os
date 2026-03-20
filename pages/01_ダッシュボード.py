@@ -2,12 +2,13 @@ import streamlit as st
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in
+from src.ui.session import ensure_logged_in, render_sidebar
 
 
 st.set_page_config(page_title="ダッシュボード", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
+render_sidebar(user)
 
 with service_scope() as container:
     dashboard = container.dashboard_service.get_dashboard_data(user["user_id"])

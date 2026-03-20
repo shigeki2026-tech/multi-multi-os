@@ -2,12 +2,13 @@ import streamlit as st
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in
+from src.ui.session import ensure_logged_in, render_sidebar
 
 
 st.set_page_config(page_title="応答率速報", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
+render_sidebar(user)
 
 with service_scope() as container:
     project_options = container.master_service.project_options()
@@ -31,7 +32,7 @@ with st.form("response_snapshot_form"):
         help="1行1件で入力します。mpg1 を含むものは AI、takeyama を含むものは Form、それ以外を入電として集計します。",
         height=180,
     )
-    submit = st.form_submit_button("集計する", use_container_width=True)
+    submit = st.form_submit_button("集計する", use_container_width=True, type="primary")
 
 if submit:
     creators = [line.strip() for line in creators_text.splitlines() if line.strip()]
