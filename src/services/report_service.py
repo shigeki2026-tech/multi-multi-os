@@ -20,7 +20,7 @@ class ReportService(ReportServiceInterface):
         target_date = payload["target_date"]
         subject = payload.get("subject") or f"{target_date} 日報"
         body = self._build_body(
-            display_name=user.display_name if user else "不明",
+            display_name=user.display_name if user else "担当者",
             target_date=str(target_date),
             summary=payload.get("summary", ""),
             highlights=payload.get("highlights", ""),
@@ -51,7 +51,7 @@ class ReportService(ReportServiceInterface):
         elif preview["invalid_to_addresses"]:
             send_status = "failed"
             error_message = f"不正なメールアドレスがあります: {', '.join(preview['invalid_to_addresses'])}"
-            message = "送信先に不正なメールアドレスがあるため送信できません。"
+            message = "送信先に不正なメールアドレスがあるため、送信できません。"
         elif gmail_status["configured"]:
             try:
                 self.gmail_service.send_email(preview["to_addresses"], preview["subject"], preview["body"])
@@ -123,16 +123,16 @@ class ReportService(ReportServiceInterface):
                 f"{target_date} 日報",
                 f"担当: {display_name}",
                 "",
-                "【本日の概要】",
+                "【本日の要約】",
                 summary or "記載なし",
                 "",
-                "【実施内容】",
+                "【対応内容】",
                 highlights or "記載なし",
                 "",
-                "【課題・懸念点】",
+                "【課題・共有事項】",
                 issues or "記載なし",
                 "",
-                "【明日の対応】",
+                "【翌日の対応】",
                 next_actions or "記載なし",
             ]
         )

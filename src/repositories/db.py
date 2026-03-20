@@ -15,7 +15,50 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_user_columns()
+    ensure_team_columns()
     ensure_project_columns()
+    ensure_task_columns()
+
+
+def ensure_user_columns() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns("users")}
+    statements = []
+    if "google_email" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN google_email VARCHAR(255)")
+    if "last_login_at" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN last_login_at DATETIME")
+
+    if statements:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+            connection.execute(text("UPDATE users SET google_email = email WHERE google_email IS NULL AND email IS NOT NULL"))
+
+
+def ensure_team_columns() -> None:
+    inspector = inspect(engine)
+    if "teams" not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns("teams")}
+    statements = []
+    if "display_order" not in existing:
+        statements.append("ALTER TABLE teams ADD COLUMN display_order INTEGER DEFAULT 0")
+    if "is_active" not in existing:
+        statements.append("ALTER TABLE teams ADD COLUMN is_active BOOLEAN DEFAULT 1")
+    if "description" not in existing:
+        statements.append("ALTER TABLE teams ADD COLUMN description TEXT")
+
+    if statements:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+            connection.execute(text("UPDATE teams SET is_active = 1 WHERE is_active IS NULL"))
 
 
 def ensure_project_columns() -> None:
@@ -26,7 +69,7 @@ def ensure_project_columns() -> None:
     existing = {column["name"] for column in inspector.get_columns("projects")}
     statements = []
     if "color" not in existing:
-        statements.append("ALTER TABLE projects ADD COLUMN color VARCHAR(20) DEFAULT '#5B6CFF'")
+        statements.append("ALTER TABLE projects ADD COLUMN color VARCHAR(20) DEFAULT '#4F8CFF'")
     if "display_order" not in existing:
         statements.append("ALTER TABLE projects ADD COLUMN display_order INTEGER DEFAULT 0")
     if "is_active" not in existing:
@@ -36,6 +79,25 @@ def ensure_project_columns() -> None:
         with engine.begin() as connection:
             for statement in statements:
                 connection.execute(text(statement))
+
+
+def ensure_task_columns() -> None:
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    existing = {column["name"] for column in inspector.get_columns("tasks")}
+    statements = []
+    if "is_active" not in existing:
+        statements.append("ALTER TABLE tasks ADD COLUMN is_active BOOLEAN DEFAULT 1")
+    if "deleted_by" not in existing:
+        statements.append("ALTER TABLE tasks ADD COLUMN deleted_by INTEGER")
+
+    if statements:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+            connection.execute(text("UPDATE tasks SET is_active = 1 WHERE is_active IS NULL"))
 
 
 @contextmanager

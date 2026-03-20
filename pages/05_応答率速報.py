@@ -15,7 +15,7 @@ with service_scope() as container:
     history = container.leoc_service.list_history_for_display()
 
 st.title("応答率速報")
-st.caption("案件ごとの応答率速報を手入力で作成します。将来的に通話呼詳細からの自動集計へ広げる前提の画面です。")
+st.caption("案件ごとの応答率速報を手入力で集計します。将来は呼詳細などからの自動集計へ拡張する前提です。")
 
 project = st.selectbox("案件選択", options=project_options, format_func=lambda x: x["label"])
 
@@ -29,10 +29,10 @@ with st.form("response_snapshot_form"):
     creators_text = st.text_area(
         "作成者一覧",
         value="mpg1_a\nmpg1_b\ntakeyama_a\noperator_a\noperator_b\noperator_c",
-        help="1行1件で入力します。mpg1 を含むものは AI、takeyama を含むものは Form、それ以外を入電として集計します。",
+        help="1行に1件ずつ入力します。mpg1 を含むものは AI、takeyama を含むものは Form、それ以外を入電として集計します。",
         height=180,
     )
-    submit = st.form_submit_button("集計する", use_container_width=True, type="primary")
+    submit = st.form_submit_button("集計する", type="primary")
 
 if submit:
     creators = [line.strip() for line in creators_text.splitlines() if line.strip()]
@@ -59,7 +59,7 @@ if result:
     st.subheader("投稿文")
     st.code(result["post_text"], language="text")
     st.text_area("コピー用テキスト", value=result["post_text"], height=120)
-    st.caption("今後は project_name / source_name / queue_name を保持し、案件別の履歴管理へ拡張しやすい構造に寄せます。")
+    st.caption("将来は project_name / source_name / queue_name を拡張し、案件別・窓口別の履歴管理へ寄せやすい構造にします。")
 
 st.subheader("履歴")
 st.dataframe(history, use_container_width=True, hide_index=True)

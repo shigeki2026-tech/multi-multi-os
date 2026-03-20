@@ -17,23 +17,23 @@ def seed_if_needed():
         if existing_user is not None:
             return
 
-        team1 = Team(team_name="マルチ業務一課")
-        team2 = Team(team_name="マルチ業務二課")
+        team1 = Team(team_name="マルチ業務1課", display_order=10, is_active=True, description="一次対応チーム")
+        team2 = Team(team_name="マルチ業務2課", display_order=20, is_active=True, description="品質確認チーム")
         session.add_all([team1, team2])
         session.flush()
 
         users = [
-            User(display_name="山田SV", email="yamada@example.com", role="sv", team_id=team1.team_id, is_active=True),
-            User(display_name="佐藤SV", email="sato@example.com", role="sv", team_id=team1.team_id, is_active=True),
-            User(display_name="田中SV", email="tanaka@example.com", role="sv", team_id=team2.team_id, is_active=True),
-            User(display_name="管理者", email="admin@example.com", role="admin", team_id=team1.team_id, is_active=True),
+            User(google_email="ohama@example.com", display_name="大濱成基", email="ohama@example.com", role="admin", team_id=team1.team_id, is_active=True),
+            User(google_email="yamada@example.com", display_name="山田SV", email="yamada@example.com", role="sv", team_id=team1.team_id, is_active=True),
+            User(google_email="sato@example.com", display_name="佐藤SV", email="sato@example.com", role="sv", team_id=team1.team_id, is_active=True),
+            User(google_email="tanaka@example.com", display_name="田中SV", email="tanaka@example.com", role="sv", team_id=team2.team_id, is_active=True),
         ]
         session.add_all(users)
         session.flush()
 
         projects = [
-            Project(project_name="代表案件A", team_id=team1.team_id, color="#4F8CFF", display_order=10, is_active=True),
-            Project(project_name="受電一次対応", team_id=team1.team_id, color="#34C759", display_order=20, is_active=True),
+            Project(project_name="案件A", team_id=team1.team_id, color="#4F8CFF", display_order=10, is_active=True),
+            Project(project_name="入電管理", team_id=team1.team_id, color="#34C759", display_order=20, is_active=True),
             Project(project_name="品質確認", team_id=team2.team_id, color="#FF9F0A", display_order=30, is_active=True),
         ]
         session.add_all(projects)
@@ -44,48 +44,51 @@ def seed_if_needed():
                 Task(
                     task_type="personal_task",
                     title="午前中の件数チェック",
-                    description="当日件数の確認",
-                    requester_user_id=users[3].user_id,
-                    assignee_user_id=users[0].user_id,
+                    description="本日の件数を確認",
+                    requester_user_id=users[0].user_id,
+                    assignee_user_id=users[1].user_id,
                     team_id=team1.team_id,
                     project_id=projects[0].project_id,
                     priority="高",
                     status="進行中",
                     due_date=date.today(),
                     needs_confirmation=False,
+                    is_active=True,
                 ),
                 Task(
                     task_type="team_task",
                     title="引継ぎ内容の整理",
-                    description="夕会向けの引継ぎ事項を整理",
-                    requester_user_id=users[0].user_id,
-                    assignee_user_id=users[1].user_id,
+                    description="前日からの引継ぎ事項を整理",
+                    requester_user_id=users[1].user_id,
+                    assignee_user_id=users[2].user_id,
                     team_id=team1.team_id,
                     project_id=projects[1].project_id,
                     priority="中",
                     status="未着手",
                     due_date=date.today(),
                     needs_confirmation=False,
+                    is_active=True,
                 ),
                 Task(
                     task_type="handover_task",
-                    title="前日未処理の確認",
-                    description="未処理案件の有無を確認",
-                    requester_user_id=users[1].user_id,
-                    assignee_user_id=users[0].user_id,
+                    title="昨日未対応の確認",
+                    description="未対応案件の有無を確認",
+                    requester_user_id=users[2].user_id,
+                    assignee_user_id=users[1].user_id,
                     team_id=team1.team_id,
                     project_id=projects[2].project_id,
                     priority="高",
                     status="確認待ち",
                     due_date=date.today() - timedelta(days=1),
                     needs_confirmation=True,
+                    is_active=True,
                 ),
                 Task(
                     task_type="sv_request",
                     title="14時速報の作成",
                     description="14:00時点の速報を作成してください",
-                    requester_user_id=users[1].user_id,
-                    assignee_user_id=users[0].user_id,
+                    requester_user_id=users[2].user_id,
+                    assignee_user_id=users[1].user_id,
                     team_id=team1.team_id,
                     project_id=projects[0].project_id,
                     priority="高",
@@ -94,6 +97,7 @@ def seed_if_needed():
                     due_date=date.today(),
                     needs_confirmation=True,
                     related_link="https://example.local/summary",
+                    is_active=True,
                 ),
                 LeocSnapshot(
                     snapshot_time="13:00",
@@ -104,7 +108,7 @@ def seed_if_needed():
                     form_count=6,
                     source_type="seed",
                     source_ref="sample",
-                    created_by=users[0].user_id,
+                    created_by=users[1].user_id,
                 ),
             ]
         )

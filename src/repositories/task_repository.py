@@ -9,8 +9,12 @@ class TaskRepository:
     def __init__(self, session):
         self.session = session
 
-    def list_tasks(self, assignee_user_id=None, include_requests=True, exclude_completed=False):
-        conditions = [Task.deleted_at.is_(None)]
+    def list_tasks(self, assignee_user_id=None, include_requests=True, exclude_completed=False, include_archived=False):
+        conditions = []
+        if include_archived:
+            conditions.append(Task.is_active.is_(False))
+        else:
+            conditions.extend([Task.deleted_at.is_(None), Task.is_active.is_(True)])
         if assignee_user_id:
             conditions.append(Task.assignee_user_id == assignee_user_id)
         if not include_requests:
@@ -21,17 +25,32 @@ class TaskRepository:
         return self.session.scalars(stmt).all()
 
     def list_requests(self):
-        stmt = select(Task).where(Task.task_type == "sv_request", Task.deleted_at.is_(None)).order_by(Task.created_at.desc())
+        stmt = select(Task).where(
+            Task.task_type == "sv_request",
+            Task.deleted_at.is_(None),
+            Task.is_active.is_(True),
+        ).order_by(Task.created_at.desc())
         return self.session.scalars(stmt).all()
 
     def list_overdue_tasks(self, assignee_user_id=None):
-        conditions = [Task.deleted_at.is_(None), Task.due_date.is_not(None), Task.due_date < date.today(), Task.status != "完了"]
+        conditions = [
+            Task.deleted_at.is_(None),
+            Task.is_active.is_(True),
+            Task.due_date.is_not(None),
+            Task.due_date < date.today(),
+            Task.status != "完了",
+        ]
         if assignee_user_id:
             conditions.append(Task.assignee_user_id == assignee_user_id)
         return self.session.scalars(select(Task).where(and_(*conditions)).order_by(Task.due_date)).all()
 
     def list_today_due_tasks(self, assignee_user_id=None):
-        conditions = [Task.deleted_at.is_(None), Task.due_date == date.today(), Task.status != "完了"]
+        conditions = [
+            Task.deleted_at.is_(None),
+            Task.is_active.is_(True),
+            Task.due_date == date.today(),
+            Task.status != "完了",
+        ]
         if assignee_user_id:
             conditions.append(Task.assignee_user_id == assignee_user_id)
         return self.session.scalars(select(Task).where(and_(*conditions)).order_by(Task.updated_at.desc())).all()
