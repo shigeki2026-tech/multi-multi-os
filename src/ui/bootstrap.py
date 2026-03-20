@@ -17,8 +17,8 @@ def seed_if_needed():
         if existing_user is not None:
             return
 
-        team1 = Team(team_name="マルチ業務1課")
-        team2 = Team(team_name="マルチ業務2課")
+        team1 = Team(team_name="マルチ業務一課")
+        team2 = Team(team_name="マルチ業務二課")
         session.add_all([team1, team2])
         session.flush()
 
@@ -32,9 +32,9 @@ def seed_if_needed():
         session.flush()
 
         projects = [
-            Project(project_name="LEOC", team_id=team1.team_id, color="#D9485F", display_order=10, is_active=True),
-            Project(project_name="入電管理", team_id=team1.team_id, color="#F59F00", display_order=20, is_active=True),
-            Project(project_name="品質監査", team_id=team2.team_id, color="#495057", display_order=30, is_active=True),
+            Project(project_name="代表案件A", team_id=team1.team_id, color="#4F8CFF", display_order=10, is_active=True),
+            Project(project_name="受電一次対応", team_id=team1.team_id, color="#34C759", display_order=20, is_active=True),
+            Project(project_name="品質確認", team_id=team2.team_id, color="#FF9F0A", display_order=30, is_active=True),
         ]
         session.add_all(projects)
         session.flush()
@@ -43,8 +43,8 @@ def seed_if_needed():
             [
                 Task(
                     task_type="personal_task",
-                    title="LEOC朝速報チェック",
-                    description="前日との差分確認",
+                    title="午前中の件数チェック",
+                    description="当日件数の確認",
                     requester_user_id=users[3].user_id,
                     assignee_user_id=users[0].user_id,
                     team_id=team1.team_id,
@@ -56,8 +56,8 @@ def seed_if_needed():
                 ),
                 Task(
                     task_type="team_task",
-                    title="問い合わせ整理",
-                    description="午前中の問い合わせ分類",
+                    title="引継ぎ内容の整理",
+                    description="夕会向けの引継ぎ事項を整理",
                     requester_user_id=users[0].user_id,
                     assignee_user_id=users[1].user_id,
                     team_id=team1.team_id,
@@ -69,8 +69,8 @@ def seed_if_needed():
                 ),
                 Task(
                     task_type="handover_task",
-                    title="夜間引継ぎ確認",
-                    description="未処理案件の確認",
+                    title="前日未処理の確認",
+                    description="未処理案件の有無を確認",
                     requester_user_id=users[1].user_id,
                     assignee_user_id=users[0].user_id,
                     team_id=team1.team_id,
@@ -82,8 +82,8 @@ def seed_if_needed():
                 ),
                 Task(
                     task_type="sv_request",
-                    title="応答率速報の再確認",
-                    description="14:00時点の速報を再計算してください",
+                    title="14時速報の作成",
+                    description="14:00時点の速報を作成してください",
                     requester_user_id=users[1].user_id,
                     assignee_user_id=users[0].user_id,
                     team_id=team1.team_id,
@@ -93,7 +93,7 @@ def seed_if_needed():
                     requested_date=date.today(),
                     due_date=date.today(),
                     needs_confirmation=True,
-                    related_link="https://example.local/leoc",
+                    related_link="https://example.local/summary",
                 ),
                 LeocSnapshot(
                     snapshot_time="13:00",

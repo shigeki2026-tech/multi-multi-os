@@ -2,19 +2,20 @@ import streamlit as st
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in
+from src.ui.session import ensure_logged_in, render_sidebar
 
 
-st.set_page_config(page_title="Calendar", layout="wide")
+st.set_page_config(page_title="カレンダー", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
+render_sidebar(user)
 
 with service_scope() as container:
     today_events = container.calendar_service.get_todays_events(user["user_id"])
     week_events = container.calendar_service.get_week_events(user["user_id"])
     calendar_status = container.calendar_service.get_status()
 
-st.title("Google Calendar 予定")
+st.title("カレンダー")
 
 if calendar_status["error"]:
     st.warning(calendar_status["message"])
@@ -38,4 +39,4 @@ with right:
     else:
         st.caption("今週の予定は取得できませんでした。")
 
-st.caption("API未設定または取得失敗時は警告を表示し、アプリは継続動作します。")
+st.caption("API 未設定または取得失敗時は警告を表示し、アプリ全体は継続して利用できます。")

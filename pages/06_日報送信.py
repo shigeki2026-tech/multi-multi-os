@@ -4,12 +4,13 @@ import streamlit as st
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in
+from src.ui.session import ensure_logged_in, render_sidebar
 
 
 st.set_page_config(page_title="日報送信", layout="wide")
 ensure_app_ready()
 user = ensure_logged_in()
+render_sidebar(user)
 
 st.title("日報送信")
 
@@ -28,11 +29,11 @@ with st.form("report_form"):
     target_date = c1.date_input("対象日", value=date.today())
     subject = c2.text_input("件名", value=f"{target_date} 日報")
     to_addresses = st.text_input("送信先", value=default_to, help="カンマ区切りで複数指定できます。")
-    summary = st.text_area("本日の概要", height=100)
-    highlights = st.text_area("実施内容", height=140)
-    issues = st.text_area("課題・懸念点", height=100)
-    next_actions = st.text_area("明日の対応", height=100)
-    preview_clicked = st.form_submit_button("プレビュー作成", use_container_width=True)
+    summary = st.text_area("本日の要約", height=100)
+    highlights = st.text_area("対応内容", height=140)
+    issues = st.text_area("課題・確認事項", height=100)
+    next_actions = st.text_area("翌日の対応", height=100)
+    preview_clicked = st.form_submit_button("プレビュー作成", use_container_width=True, type="primary")
 
 if preview_clicked:
     with service_scope() as container:
@@ -76,7 +77,7 @@ if preview:
             with service_scope() as container:
                 result = container.report_service.send_report(actor_id=user["user_id"], payload=payload)
         except Exception as exc:
-            st.error(f"送信処理中に予期しないエラーが発生しました: {exc}")
+            st.error(f"送信処理中に想定外のエラーが発生しました: {exc}")
         else:
             if result["send_status"] == "sent":
                 st.success(result["message"])
