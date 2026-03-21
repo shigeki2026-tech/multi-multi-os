@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 
 from src.repositories.admin_repository import AdminRepository
+from src.repositories.attendance_repository import AttendanceRepository
 from src.repositories.audit_repository import AuditRepository
 from src.repositories.db import get_session
 from src.repositories.leoc_repository import LeocRepository
@@ -9,6 +10,7 @@ from src.repositories.report_repository import ReportRepository
 from src.repositories.request_repository import RequestRepository
 from src.repositories.task_repository import TaskRepository
 from src.services.admin_service import AdminService
+from src.services.attendance_service import AttendanceService
 from src.services.audit_service import AuditService
 from src.services.calendar_service import build_calendar_service
 from src.services.call_detail_service import CallDetailService
@@ -35,6 +37,7 @@ class ServiceContainer:
         self.leoc_repository = LeocRepository(session)
         self.audit_repository = AuditRepository(session)
         self.admin_repository = AdminRepository(session)
+        self.attendance_repository = AttendanceRepository(session)
 
         self.audit_service = AuditService(self.audit_repository)
         self.master_service = MasterService(self.master_repository, self.audit_service)
@@ -60,6 +63,7 @@ class ServiceContainer:
             self.master_repository,
         )
         self.admin_service = AdminService(self.admin_repository)
+        self.attendance_service = AttendanceService(self.attendance_repository, self.audit_service)
 
 
 @contextmanager

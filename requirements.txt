@@ -2,6 +2,7 @@ streamlit==1.43.2
 SQLAlchemy==2.0.38
 psycopg2-binary==2.9.10
 pandas==2.2.3
+openpyxl==3.1.5
 python-dotenv==1.0.1
 google-api-python-client==2.165.0
 google-auth==2.38.0

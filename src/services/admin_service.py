@@ -4,18 +4,20 @@ class AdminService:
 
     def list_apps(self):
         mapping = {
-            "tasks": "pages/02_タスク.py",
-            "requests": "pages/03_SV依頼.py",
-            "leoc": "pages/05_応答率速報.py",
-            "reports": "pages/06_日報送信.py",
-            "call_details": "pages/07_呼詳細作成.py",
+            "tasks": "pages/02_\u30bf\u30b9\u30af.py",
+            "requests": "pages/03_SV\u4f9d\u983c.py",
+            "leoc": "pages/05_\u5fdc\u7b54\u7387\u901f\u5831.py",
+            "reports": "pages/06_\u65e5\u5831\u9001\u4fe1.py",
+            "call_details": "pages/07_\u547c\u8a73\u7d30\u4f5c\u6210.py",
+            "attendance": "pages/08_\u6253\u523b\u7167\u5408.py",
         }
         names = {
-            "tasks": "タスク",
-            "requests": "SV依頼",
-            "leoc": "応答率速報",
-            "reports": "日報送信",
-            "call_details": "呼詳細作成",
+            "tasks": "\u30bf\u30b9\u30af",
+            "requests": "SV\u4f9d\u983c",
+            "leoc": "\u5fdc\u7b54\u7387\u901f\u5831",
+            "reports": "\u65e5\u5831\u9001\u4fe1",
+            "call_details": "\u547c\u8a73\u7d30\u4f5c\u6210",
+            "attendance": "\u6253\u523b\u7167\u5408",
         }
         return [
             {
