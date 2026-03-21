@@ -482,6 +482,14 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
     text = str(value).strip()
     if not text:
         return None
+    serial_value = None
+    if isinstance(value, (int, float)) and not pd.isna(value):
+        serial_value = float(value)
+    elif re.fullmatch(r"\d+(?:\.\d+)?", text):
+        serial_value = float(text)
+    if serial_value is not None and 30000 <= serial_value <= 60000:
+        base_date = datetime(1899, 12, 30) + timedelta(days=serial_value)
+        return base_date.date()
     if re.fullmatch(r"\d{3,}", text):
         return None
 
