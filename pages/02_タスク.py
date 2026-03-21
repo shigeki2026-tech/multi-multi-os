@@ -92,7 +92,7 @@ def render_task_card(task: dict, actor_id: int):
         with title_right:
             if task["needs_confirmation"]:
                 st.markdown(
-                    "<div style='text-align:right;font-size:1rem;color:#DC2626;font-weight:700;'>⚠ 要確認</div>",
+                    "<div style='text-align:right;font-size:1rem;color:#DC2626;font-weight:700;'>&#9888; 要確認</div>",
                     unsafe_allow_html=True,
                 )
             elif is_editing:
