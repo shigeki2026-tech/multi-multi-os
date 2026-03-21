@@ -111,9 +111,8 @@ def prepare_shift_dataframe(raw_df: pd.DataFrame, context_hint: str = "") -> pd.
     if vertical_header_idx is not None:
         return promote_detected_header(raw_df, vertical_header_idx)
 
-    matrix_header = detect_monthly_matrix_header(raw_df, context_hint=context_hint)
-    if matrix_header is not None:
-        return convert_monthly_shift_matrix_to_rows(raw_df, context_hint=context_hint, detected=matrix_header)
+    if is_monthly_shift_matrix(raw_df, context_hint=context_hint):
+        return convert_monthly_shift_matrix_to_rows(raw_df, context_hint=context_hint)
 
     raise ValueError("\u30b7\u30d5\u30c8\u8868\u306e\u30d8\u30c3\u30c0\u3092\u691c\u51fa\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002")
 
@@ -307,20 +306,23 @@ def promote_detected_header(raw_df: pd.DataFrame, header_row_idx: int) -> pd.Dat
 
 
 def detect_monthly_matrix_header(raw_df: pd.DataFrame, context_hint: str = "") -> dict | None:
-    for row_idx in range(len(raw_df)):
-        header_row = raw_df.iloc[row_idx].tolist()
-        fixed_columns = _detect_fixed_columns(header_row)
-        if len(fixed_columns) < 4:
-            continue
-        date_row_idx, date_columns = _detect_date_row_and_columns(raw_df, row_idx, fixed_columns, context_hint)
-        if date_columns:
-            return {
-                "header_row_idx": row_idx,
-                "fixed_columns": fixed_columns,
-                "date_row_idx": date_row_idx,
-                "date_columns": date_columns,
-            }
-    return None
+    header_row_idx = detect_monthly_shift_header_row(raw_df)
+    if header_row_idx is None:
+        return None
+    header_row = raw_df.iloc[header_row_idx].tolist()
+    fixed_columns = _detect_fixed_columns(header_row)
+    date_row_idx = detect_monthly_shift_date_row(raw_df, header_row_idx, context_hint=context_hint)
+    if date_row_idx is None:
+        return None
+    date_columns = _extract_date_columns_from_row(raw_df.iloc[date_row_idx].tolist(), fixed_columns, context_hint=context_hint, raw_df=raw_df)
+    if not date_columns:
+        return None
+    return {
+        "header_row_idx": header_row_idx,
+        "fixed_columns": fixed_columns,
+        "date_row_idx": date_row_idx,
+        "date_columns": date_columns,
+    }
 
 
 def convert_monthly_shift_matrix_to_rows(raw_df: pd.DataFrame, context_hint: str = "", detected: dict | None = None) -> pd.DataFrame:
@@ -359,6 +361,33 @@ def convert_monthly_shift_matrix_to_rows(raw_df: pd.DataFrame, context_hint: str
             )
 
     return pd.DataFrame(rows, columns=["work_date", "employee_code", "employee_name", "team_name", "post_code", "shift_raw"])
+
+
+def is_monthly_shift_matrix(raw_df: pd.DataFrame, context_hint: str = "") -> bool:
+    return detect_monthly_matrix_header(raw_df, context_hint=context_hint) is not None
+
+
+def detect_monthly_shift_header_row(raw_df: pd.DataFrame) -> int | None:
+    for row_idx in range(len(raw_df)):
+        header_row = raw_df.iloc[row_idx].tolist()
+        fixed_columns = _detect_fixed_columns(header_row)
+        if len(fixed_columns) >= 4:
+            return row_idx
+    return None
+
+
+def detect_monthly_shift_date_row(raw_df: pd.DataFrame, header_row_idx: int, context_hint: str = "") -> int | None:
+    header_row = raw_df.iloc[header_row_idx].tolist()
+    fixed_columns = _detect_fixed_columns(header_row)
+    if len(fixed_columns) < 4:
+        return None
+
+    for row_idx in range(header_row_idx - 1, max(header_row_idx - 4, -1), -1):
+        row = raw_df.iloc[row_idx].tolist()
+        date_columns = _extract_date_columns_from_row(row, fixed_columns, context_hint=context_hint, raw_df=raw_df)
+        if len(date_columns) >= 2:
+            return row_idx
+    return None
 
 
 def _normalize_table(df: pd.DataFrame, candidates: dict[str, list[str]], required_fields: list[str]) -> pd.DataFrame:
@@ -414,22 +443,12 @@ def _detect_fixed_columns(header_row: list) -> dict[str, int]:
 
 def _detect_date_row_and_columns(raw_df: pd.DataFrame, header_row_idx: int, fixed_columns: dict[str, int], context_hint: str) -> tuple[int | None, list[tuple[int, date]]]:
     first_shift_column = max(fixed_columns.values()) + 1
-    year_month_hint = _extract_year_month_hint(raw_df, context_hint)
-    best_row_idx = None
-    best_date_columns: list[tuple[int, date]] = []
-
-    for row_idx in range(max(header_row_idx - 3, 0), header_row_idx):
+    for row_idx in range(header_row_idx - 1, max(header_row_idx - 4, -1), -1):
         row = raw_df.iloc[row_idx].tolist()
-        current_date_columns = []
-        for column_idx in range(first_shift_column, len(row)):
-            work_date = _parse_matrix_date_cell(row[column_idx], year_month_hint)
-            if work_date is not None:
-                current_date_columns.append((column_idx, work_date))
-        if len(current_date_columns) > len(best_date_columns):
-            best_row_idx = row_idx
-            best_date_columns = current_date_columns
-
-    return best_row_idx, best_date_columns
+        current_date_columns = _extract_date_columns_from_row(row, fixed_columns, context_hint=context_hint, raw_df=raw_df)
+        if len(current_date_columns) >= 2:
+            return row_idx, current_date_columns
+    return None, []
 
 
 def _extract_year_month_hint(raw_df: pd.DataFrame, context_hint: str) -> tuple[int, int]:
@@ -462,6 +481,8 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
 
     text = str(value).strip()
     if not text:
+        return None
+    if re.fullmatch(r"\d{3,}", text):
         return None
 
     parsed = pd.to_datetime(text, errors="coerce")
@@ -506,6 +527,17 @@ def _cell_value(row: list, index: int | None) -> str | None:
     if index is None or index >= len(row):
         return None
     return _clean_text(row[index])
+
+
+def _extract_date_columns_from_row(row: list, fixed_columns: dict[str, int], context_hint: str, raw_df: pd.DataFrame) -> list[tuple[int, date]]:
+    first_shift_column = max(fixed_columns.values()) + 1
+    year_month_hint = _extract_year_month_hint(raw_df, context_hint)
+    date_columns = []
+    for column_idx in range(first_shift_column, len(row)):
+        work_date = _parse_matrix_date_cell(row[column_idx], year_month_hint)
+        if work_date is not None:
+            date_columns.append((column_idx, work_date))
+    return date_columns
 
 
 def _looks_like_employee_row(employee_code: str | None, employee_name: str | None, team_name: str | None, post_code: str | None) -> bool:
