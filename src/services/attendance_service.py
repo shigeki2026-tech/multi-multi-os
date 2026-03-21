@@ -14,6 +14,9 @@ from src.utils.attendance_parser import (
     normalize_shift_frame,
     parse_actual_row,
     parse_shift_row,
+    prepare_shift_dataframe,
+    read_pasted_shift_text,
+    read_uploaded_shift_table,
     read_uploaded_table,
 )
 
@@ -48,8 +51,16 @@ class AttendanceService:
         self.attendance_repository = attendance_repository
         self.audit_service = audit_service
 
-    def run_reconciliation(self, actor_id: int | None, target_label: str, shift_file, punch_file):
-        shift_df = normalize_shift_frame(read_uploaded_table(shift_file))
+    def run_reconciliation(self, actor_id: int | None, target_label: str, punch_file, shift_file=None, shift_text: str = "", shift_input_mode: str = "file"):
+        shift_filename = shift_file.name if shift_file is not None else "pasted_shift.tsv"
+        shift_context_hint = " ".join(part for part in [target_label, shift_filename] if part)
+
+        if shift_input_mode == "paste":
+            shift_raw_df = read_pasted_shift_text(shift_text)
+        else:
+            shift_raw_df = read_uploaded_shift_table(shift_file)
+
+        shift_df = normalize_shift_frame(prepare_shift_dataframe(shift_raw_df, context_hint=shift_context_hint))
         punch_df = normalize_punch_frame(read_uploaded_table(punch_file))
         if shift_df.empty:
             raise ValueError("\u30b7\u30d5\u30c8\u30d5\u30a1\u30a4\u30eb\u306b\u6709\u52b9\u306a\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093\u3002")
@@ -211,7 +222,7 @@ class AttendanceService:
         attendance_run = self.attendance_repository.create_run(
             AttendanceRun(
                 target_label=target_label.strip() or None,
-                shift_filename=shift_file.name,
+                shift_filename=shift_filename,
                 punch_filename=punch_file.name,
                 executed_by=actor_id,
                 summary_json=summary,
