@@ -192,3 +192,70 @@ class AuditLog(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     before_json: Mapped[dict | None] = mapped_column(JSON)
     after_json: Mapped[dict | None] = mapped_column(JSON)
+
+
+class AttendanceRuleSet(TimestampMixin, Base):
+    __tablename__ = "attendance_rule_sets"
+
+    rule_set_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_name: Mapped[str] = mapped_column(String(255))
+    timezone_mode: Mapped[str] = mapped_column(String(50), default="JST")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AttendanceShiftRule(TimestampMixin, Base):
+    __tablename__ = "attendance_shift_rules"
+
+    rule_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_set_id: Mapped[int] = mapped_column(ForeignKey("attendance_rule_sets.rule_set_id"))
+    shift_code: Mapped[str] = mapped_column(String(50))
+    start_time: Mapped[str | None] = mapped_column(String(10))
+    end_time: Mapped[str | None] = mapped_column(String(10))
+    rule_type: Mapped[str] = mapped_column(String(50), default="work")
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class AttendanceIgnoreTarget(TimestampMixin, Base):
+    __tablename__ = "attendance_ignore_targets"
+
+    ignore_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    employee_code: Mapped[str | None] = mapped_column(String(100))
+    employee_name: Mapped[str | None] = mapped_column(String(255))
+    post_code: Mapped[str | None] = mapped_column(String(100))
+    reason: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AttendanceRun(Base):
+    __tablename__ = "attendance_runs"
+
+    run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_label: Mapped[str | None] = mapped_column(String(255))
+    shift_filename: Mapped[str | None] = mapped_column(String(255))
+    punch_filename: Mapped[str | None] = mapped_column(String(255))
+    executed_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"))
+    executed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    summary_json: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(50), default="completed")
+
+
+class AttendanceRunRow(Base):
+    __tablename__ = "attendance_run_rows"
+
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("attendance_runs.run_id"))
+    work_date: Mapped[date | None] = mapped_column(Date)
+    employee_code: Mapped[str | None] = mapped_column(String(100))
+    employee_name: Mapped[str | None] = mapped_column(String(255))
+    team_name: Mapped[str | None] = mapped_column(String(255))
+    post_code: Mapped[str | None] = mapped_column(String(100))
+    shift_raw: Mapped[str | None] = mapped_column(String(100))
+    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime)
+    scheduled_end: Mapped[datetime | None] = mapped_column(DateTime)
+    actual_start: Mapped[datetime | None] = mapped_column(DateTime)
+    actual_end: Mapped[datetime | None] = mapped_column(DateTime)
+    late_minutes: Mapped[int | None] = mapped_column(Integer)
+    early_leave_minutes: Mapped[int | None] = mapped_column(Integer)
+    overtime_minutes: Mapped[int | None] = mapped_column(Integer)
+    result_type: Mapped[str | None] = mapped_column(String(100))
+    result_note: Mapped[str | None] = mapped_column(Text)

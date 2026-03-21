@@ -8,15 +8,16 @@ from src.ui.bootstrap import ensure_app_ready
 
 
 NAV_ITEMS = [
-    ("ホーム", "app.py"),
-    ("ダッシュボード", "pages/01_ダッシュボード.py"),
-    ("タスク", "pages/02_タスク.py"),
-    ("SV依頼", "pages/03_SV依頼.py"),
-    ("カレンダー", "pages/04_カレンダー.py"),
-    ("応答率速報", "pages/05_応答率速報.py"),
-    ("日報送信", "pages/06_日報送信.py"),
-    ("呼詳細作成", "pages/07_呼詳細作成.py"),
-    ("管理", "pages/99_管理.py"),
+    ("\u30db\u30fc\u30e0", "app.py"),
+    ("\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9", "pages/01_\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9.py"),
+    ("\u30bf\u30b9\u30af", "pages/02_\u30bf\u30b9\u30af.py"),
+    ("SV\u4f9d\u983c", "pages/03_SV\u4f9d\u983c.py"),
+    ("\u30ab\u30ec\u30f3\u30c0\u30fc", "pages/04_\u30ab\u30ec\u30f3\u30c0\u30fc.py"),
+    ("\u5fdc\u7b54\u7387\u901f\u5831", "pages/05_\u5fdc\u7b54\u7387\u901f\u5831.py"),
+    ("\u65e5\u5831\u9001\u4fe1", "pages/06_\u65e5\u5831\u9001\u4fe1.py"),
+    ("\u547c\u8a73\u7d30\u4f5c\u6210", "pages/07_\u547c\u8a73\u7d30\u4f5c\u6210.py"),
+    ("\u6253\u523b\u7167\u5408", "pages/08_\u6253\u523b\u7167\u5408.py"),
+    ("\u7ba1\u7406", "pages/99_\u7ba1\u7406.py"),
 ]
 
 
@@ -42,22 +43,22 @@ def ensure_logged_in():
     left, center, right = st.columns([1.1, 1.4, 1.1])
     with center:
         with st.container(border=True):
-            st.subheader("ログイン")
-            st.caption("利用するユーザーを選択してください。")
+            st.subheader("\u30ed\u30b0\u30a4\u30f3")
+            st.caption("\u5229\u7528\u3059\u308b\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
             users = _list_users()
             selected = st.selectbox(
-                "ユーザー選択",
+                "\u30e6\u30fc\u30b6\u30fc\u9078\u629e",
                 options=users,
                 format_func=lambda item: item["label"],
                 index=None,
-                placeholder="ユーザーを選択",
+                placeholder="\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e",
             )
-            if st.button("ログイン", type="primary"):
+            if st.button("\u30ed\u30b0\u30a4\u30f3", type="primary"):
                 if selected:
                     st.session_state["current_user"] = _login_user(selected["value"])
                     st.session_state.pop("current_user_id", None)
                     st.rerun()
-                st.warning("ユーザーを選択してください。")
+                st.warning("\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
     st.stop()
 
 
@@ -85,28 +86,28 @@ def logout():
 def ensure_admin(user=None):
     current_user = user or get_current_user()
     if not current_user or current_user.get("role") != "admin":
-        st.error("この画面は admin ロールのみ閲覧できます。")
+        st.error("\u3053\u306e\u753b\u9762\u306f admin \u30ed\u30fc\u30eb\u306e\u307f\u5229\u7528\u3067\u304d\u307e\u3059\u3002")
         st.stop()
 
 
 def render_sidebar(user: dict):
     _apply_layout_style()
     with st.sidebar:
-        st.markdown("### マルチマルチ管理メニュー")
+        st.markdown("### \u30de\u30eb\u30c1\u30de\u30eb\u30c1OS")
         with st.container(border=True):
             st.markdown(f"**{user['display_name']}**")
             role_color = "#2563EB" if user["role"] == "admin" else "#64748B"
             st.markdown(badge(user["role"], role_color), unsafe_allow_html=True)
-            st.caption(user["team_name"] or "チーム未設定")
+            st.caption(user["team_name"] or "\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a")
 
         st.divider()
         for label, page in NAV_ITEMS:
-            if label == "管理" and user.get("role") != "admin":
+            if label == "\u7ba1\u7406" and user.get("role") != "admin":
                 continue
             st.page_link(page, label=label)
 
         st.markdown("<div class='sidebar-footer-space'></div>", unsafe_allow_html=True)
-        if st.button("ログアウト", key="sidebar_logout"):
+        if st.button("\u30ed\u30b0\u30a2\u30a6\u30c8", key="sidebar_logout"):
             logout()
             st.rerun()
 
@@ -219,7 +220,7 @@ def _list_users():
         return [
             {
                 "value": user.user_id,
-                "label": f"{user.display_name} / {user.role} / {teams.get(user.team_id, 'チーム未設定')}",
+                "label": f"{user.display_name} / {user.role} / {teams.get(user.team_id, '\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a')}",
             }
             for user in repo.list_users(active_only=True)
         ]
@@ -254,7 +255,7 @@ def _to_user_dict(user, repo: MasterRepository):
         "email": user.email,
         "role": user.role,
         "team_id": user.team_id,
-        "team_name": team.team_name if team else "チーム未設定",
+        "team_name": team.team_name if team else "\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a",
         "is_active": user.is_active,
         "last_login_at": user.last_login_at,
     }
