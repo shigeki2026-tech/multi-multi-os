@@ -56,6 +56,7 @@ def ensure_logged_in():
             if st.button("\u30ed\u30b0\u30a4\u30f3", type="primary"):
                 if selected:
                     st.session_state["current_user"] = _login_user(selected["value"])
+                    _set_login_query_params(selected["value"])
                     st.session_state.pop("current_user_id", None)
                     st.rerun()
                 st.warning("\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
@@ -66,6 +67,14 @@ def get_current_user():
     current_user = st.session_state.get("current_user")
     if current_user:
         return current_user
+
+    query_user_id = _get_query_user_id()
+    if query_user_id is not None:
+        current_user = _fetch_user_dict(query_user_id)
+        if current_user:
+            st.session_state["current_user"] = current_user
+            return current_user
+        _clear_login_query_params()
 
     legacy_user_id = st.session_state.get("current_user_id")
     if legacy_user_id:
@@ -81,6 +90,7 @@ def get_current_user():
 def logout():
     st.session_state.pop("current_user", None)
     st.session_state.pop("current_user_id", None)
+    _clear_login_query_params()
 
 
 def ensure_admin(user=None):
@@ -128,6 +138,35 @@ def _apply_layout_style():
         }
         [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
             background: rgba(255,255,255,0.08);
+        }
+        [data-testid="stAppViewBlockContainer"] h3 {
+            font-size: 1.7rem;
+            line-height: 1.35;
+        }
+        [data-testid="stAppViewBlockContainer"] [data-testid="stCaptionContainer"] {
+            font-size: 1rem;
+            line-height: 1.55;
+            color: #374151;
+        }
+        [data-testid="stAppViewBlockContainer"] [data-testid="stWidgetLabel"] p {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        [data-testid="stAppViewBlockContainer"] [data-baseweb="select"] > div {
+            min-height: 3rem;
+            background: #FFFFFF;
+            border: 1px solid #94A3B8;
+            box-shadow: inset 0 0 0 1px rgba(148,163,184,0.12);
+        }
+        [data-testid="stAppViewBlockContainer"] [data-baseweb="select"] span,
+        [data-testid="stAppViewBlockContainer"] [data-baseweb="select"] div {
+            color: #111827;
+            font-size: 1rem;
+        }
+        [data-testid="stAppViewBlockContainer"] [data-baseweb="select"] input::placeholder {
+            color: #6B7280;
+            opacity: 1;
         }
         [data-testid="stSidebar"] .sidebar-footer-space {
             min-height: 2.5rem;
@@ -211,6 +250,29 @@ def _apply_layout_style():
         """,
         unsafe_allow_html=True,
     )
+
+
+def _get_query_user_id():
+    raw_value = st.query_params.get("user_id")
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, list):
+        raw_value = raw_value[0] if raw_value else None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _set_login_query_params(user_id: int):
+    st.query_params["user_id"] = str(user_id)
+
+
+def _clear_login_query_params():
+    try:
+        st.query_params.clear()
+    except AttributeError:
+        st.query_params.pop("user_id", None)
 
 
 def _list_users():
