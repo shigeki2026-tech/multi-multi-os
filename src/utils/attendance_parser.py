@@ -476,6 +476,8 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
     if value is None:
         return None
 
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
     if isinstance(value, (datetime, pd.Timestamp)):
         return value.date()
 
@@ -488,7 +490,7 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
     elif re.fullmatch(r"\d+(?:\.\d+)?", text):
         serial_value = float(text)
     if serial_value is not None and 30000 <= serial_value <= 60000:
-        base_date = datetime(1899, 12, 30) + timedelta(days=serial_value)
+        base_date = datetime(1899, 12, 30) + timedelta(days=int(serial_value))
         return base_date.date()
     if re.fullmatch(r"\d{3,}", text):
         return None
