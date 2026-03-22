@@ -476,23 +476,18 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
     if value is None:
         return None
 
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
     if isinstance(value, (datetime, pd.Timestamp)):
         return value.date()
 
     text = str(value).strip()
     if not text:
         return None
-    serial_value = None
-    if isinstance(value, (int, float)) and not pd.isna(value):
-        serial_value = float(value)
-    elif re.fullmatch(r"\d+(?:\.\d+)?", text):
-        serial_value = float(text)
-    if serial_value is not None and 30000 <= serial_value <= 60000:
-        base_date = datetime(1899, 12, 30) + timedelta(days=int(serial_value))
-        return base_date.date()
-    if re.fullmatch(r"\d{3,}", text):
+
+    # Excel serial date support
+    if re.fullmatch(r"\d+(\.0+)?", text):
+        serial = int(float(text))
+        if 30000 <= serial <= 60000:
+            return (pd.Timestamp("1899-12-30") + pd.to_timedelta(serial, unit="D")).date()
         return None
 
     parsed = pd.to_datetime(text, errors="coerce")
@@ -501,7 +496,7 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
         if timestamp.year != 1900:
             return timestamp.date()
 
-    day_match = re.fullmatch(r"(\d{1,2})\s*(?:\u65e5)?", text)
+    day_match = re.fullmatch(r"(\d{1,2})\s*(?:日)?", text)
     if day_match:
         year, month = year_month_hint
         day = int(day_match.group(1))
@@ -510,7 +505,7 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
         except ValueError:
             return None
 
-    japanese_month_day_match = re.fullmatch(r"(1[0-2]|0?[1-9])\s*\u6708\s*(3[01]|[12]?\d)\s*\u65e5", text)
+    japanese_month_day_match = re.fullmatch(r"(1[0-2]|0?[1-9])\s*月\s*(3[01]|[12]?\d)\s*日", text)
     if japanese_month_day_match:
         year = year_month_hint[0]
         month = int(japanese_month_day_match.group(1))
@@ -531,7 +526,6 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
             return None
 
     return None
-
 
 def _cell_value(row: list, index: int | None) -> str | None:
     if index is None or index >= len(row):
