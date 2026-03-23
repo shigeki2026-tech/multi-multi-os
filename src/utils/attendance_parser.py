@@ -1,3 +1,6 @@
+
+
+
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -5,6 +8,9 @@ from io import BytesIO
 from io import StringIO
 
 import pandas as pd
+
+
+raise ValueError("LOADED_THIS_ATTENDANCE_PARSER_20260322")
 
 
 EXCLUDED_POSTS = {"AM", "SV"}

@@ -21,29 +21,29 @@ from src.utils.attendance_parser import (
 )
 
 
-LABEL_DATE = "\u65e5\u4ed8"
-LABEL_NAME = "\u6c0f\u540d"
-LABEL_SHIFT_RAW = "\u30b7\u30d5\u30c8\u5165\u529b"
-LABEL_EXPECTED = "\u671f\u5f85\u52e4\u52d9\u6642\u9593"
-LABEL_ACTUAL = "\u5b9f\u7e3e\u52e4\u52d9\u6642\u9593"
-LABEL_LATE = "\u9045\u523b"
-LABEL_EARLY = "\u65e9\u9000"
-LABEL_OVERTIME = "\u6b8b\u696d"
-LABEL_RESULT = "\u5224\u5b9a"
-LABEL_NOTE = "\u5099\u8003"
-STATUS_EXCLUDED = "\u9664\u5916"
-STATUS_MATCH = "\u4e00\u81f4"
-STATUS_MISSING = "\u52e4\u52d9\u4e88\u5b9a\u3060\u304c\u5b9f\u7e3e\u306a\u3057"
-STATUS_REVIEW = "\u8981\u78ba\u8a8d"
-STATUS_UNEXPECTED = "\u4f11\u307f\u30fb\u6709\u7d66\u3060\u304c\u5b9f\u7e3e\u3042\u308a"
-SUMMARY_LATE = "\u9045\u523b\u4ef6\u6570"
-SUMMARY_EARLY = "\u65e9\u9000\u4ef6\u6570"
-SUMMARY_OVERTIME = "\u6b8b\u696d\u4ef6\u6570"
-SUMMARY_MISSING = "\u52e4\u52d9\u4e88\u5b9a\u3060\u304c\u5b9f\u7e3e\u306a\u3057\u4ef6\u6570"
-SUMMARY_UNEXPECTED = "\u4f11\u307f\u30fb\u6709\u7d66\u3060\u304c\u5b9f\u7e3e\u3042\u308a\u4ef6\u6570"
-SUMMARY_REVIEW = "\u8981\u78ba\u8a8d\u4ef6\u6570"
-SUMMARY_ISSUES = "\u5dee\u7570\u7dcf\u4ef6\u6570"
-SUMMARY_TOTAL = "\u5168\u4ef6\u6570"
+LABEL_DATE = "日付"
+LABEL_NAME = "氏名"
+LABEL_SHIFT_RAW = "シフト入力"
+LABEL_EXPECTED = "期待勤務時間"
+LABEL_ACTUAL = "実績勤務時間"
+LABEL_LATE = "遅刻"
+LABEL_EARLY = "早退"
+LABEL_OVERTIME = "残業"
+LABEL_RESULT = "判定"
+LABEL_NOTE = "備考"
+STATUS_EXCLUDED = "除外"
+STATUS_MATCH = "一致"
+STATUS_MISSING = "勤務予定だが実績なし"
+STATUS_REVIEW = "要確認"
+STATUS_UNEXPECTED = "休み・有給だが実績あり"
+SUMMARY_LATE = "遅刻件数"
+SUMMARY_EARLY = "早退件数"
+SUMMARY_OVERTIME = "残業件数"
+SUMMARY_MISSING = "勤務予定だが実績なし件数"
+SUMMARY_UNEXPECTED = "休み・有給だが実績あり件数"
+SUMMARY_REVIEW = "要確認件数"
+SUMMARY_ISSUES = "差異総件数"
+SUMMARY_TOTAL = "全件数"
 
 
 class AttendanceService:
@@ -63,9 +63,9 @@ class AttendanceService:
         shift_df = normalize_shift_frame(prepare_shift_dataframe(shift_raw_df, context_hint=shift_context_hint))
         punch_df = normalize_punch_frame(read_uploaded_table(punch_file))
         if shift_df.empty:
-            raise ValueError("\u30b7\u30d5\u30c8\u30d5\u30a1\u30a4\u30eb\u306b\u6709\u52b9\u306a\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093\u3002")
+            raise ValueError("シフトファイルに有効なデータがありません。")
         if punch_df.empty:
-            raise ValueError("\u6253\u523b\u30d5\u30a1\u30a4\u30eb\u306b\u6709\u52b9\u306a\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093\u3002")
+            raise ValueError("打刻ファイルに有効なデータがありません。")
 
         rules = self.attendance_repository.list_active_shift_rules()
         ignore_targets = self.attendance_repository.list_active_ignore_targets()
@@ -101,11 +101,11 @@ class AttendanceService:
 
             excluded_reasons = []
             if is_excluded_post(post_code):
-                excluded_reasons.append(f"Post {post_code} \u306f\u9664\u5916\u5bfe\u8c61")
+                excluded_reasons.append(f"Post {post_code} は除外対象")
             if match_ignore_target(employee_code, employee_name, post_code, ignore_sets):
-                excluded_reasons.append("\u7ba1\u7406\u753b\u9762\u306e\u9664\u5916\u5bfe\u8c61")
+                excluded_reasons.append("管理画面の除外対象")
             if parsed_shift.rule_type == "ignore":
-                excluded_reasons.append(f"\u52e4\u52d9\u8a18\u53f7 {parsed_shift.raw_value} \u306f\u7121\u8996\u8a2d\u5b9a")
+                excluded_reasons.append(f"勤務記号 {parsed_shift.raw_value} は無視設定")
 
             late_minutes = 0
             early_leave_minutes = 0
@@ -208,14 +208,14 @@ class AttendanceService:
             SUMMARY_ISSUES: len(issue_results),
             SUMMARY_TOTAL: len(all_results),
         }
-        settings_rows = [{"\u533a\u5206": "\u57fa\u672c\u8a2d\u5b9a", "\u30ad\u30fc": "timezone_mode", "\u5024": "JST", "\u88dc\u8db3": "\u7167\u5408\u57fa\u6e96"}]
+        settings_rows = [{"区分": "基本設定", "キー": "timezone_mode", "値": "JST", "補足": "照合基準"}]
         for rule in rules:
             settings_rows.append(
                 {
-                    "\u533a\u5206": "\u52e4\u52d9\u8a18\u53f7",
-                    "\u30ad\u30fc": rule.shift_code,
-                    "\u5024": f"{rule.start_time or '-'}-{rule.end_time or '-'}",
-                    "\u88dc\u8db3": f"{rule.rule_type} {rule.note or ''}".strip(),
+                    "区分": "勤務記号",
+                    "キー": rule.shift_code,
+                    "値": f"{rule.start_time or '-'}-{rule.end_time or '-'}",
+                    "補足": f"{rule.rule_type} {rule.note or ''}".strip(),
                 }
             )
 
