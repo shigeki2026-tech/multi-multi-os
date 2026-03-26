@@ -8,6 +8,7 @@ import pandas as pd
 
 
 EXCLUDED_POSTS = {"AM", "SV"}
+PUNCH_TIME_OFFSET_HOURS = 2
 SHIFT_DIRECT_PATTERN = re.compile(r"^\s*(\d{1,2})(?::?(\d{2}))?\s*[-~]\s*(\d{1,2})(?::?(\d{2}))?\s*$")
 
 SHIFT_COLUMN_CANDIDATES = {
@@ -202,7 +203,7 @@ def build_rule_lookup(rules) -> dict[str, dict]:
 def build_ignore_sets(ignore_targets) -> dict[str, set[str]]:
     return {
         "employee_codes": {str(item.employee_code).strip().upper() for item in ignore_targets if item.employee_code},
-        "employee_names": {str(item.employee_name).strip() for item in ignore_targets if item.employee_name},
+        "employee_names": {_normalize_join_name(item.employee_name) for item in ignore_targets if item.employee_name},
         "post_codes": {str(item.post_code).strip().upper() for item in ignore_targets if item.post_code},
     }
 
@@ -256,22 +257,34 @@ def parse_clock_value(work_date: date, value) -> datetime | None:
     if not text:
         return None
 
+    if text == "00:00":
+        return None
+
     parsed = pd.to_datetime(text, errors="coerce")
     if pd.notna(parsed):
         if isinstance(parsed, pd.Timestamp):
             if parsed.year == 1970 and parsed.month == 1 and parsed.day == 1:
-                return combine_date_and_parts(
+                if parsed.hour == 0 and parsed.minute == 0:
+                    return None
+                dt = combine_date_and_parts(
                     work_date,
                     str(parsed.hour),
                     f"{parsed.minute:02d}",
                 )
-            return parsed.to_pydatetime()
+                return dt + timedelta(hours=PUNCH_TIME_OFFSET_HOURS)
+            return parsed.to_pydatetime() + timedelta(hours=PUNCH_TIME_OFFSET_HOURS)
 
     match = re.match(r"^\s*(\d{1,2})(?::?(\d{2}))?\s*$", text)
     if not match:
         return None
 
-    return combine_date_and_parts(work_date, match.group(1), match.group(2))
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    if hour == 0 and minute == 0:
+        return None
+
+    dt = combine_date_and_parts(work_date, match.group(1), match.group(2))
+    return dt + timedelta(hours=PUNCH_TIME_OFFSET_HOURS)
 
 
 def combine_date_and_hhmm(work_date: date, value: str | None) -> datetime | None:
@@ -335,7 +348,11 @@ def _normalize_join_name(value: str | None) -> str:
 def make_join_key(work_date: date, employee_code: str | None, employee_name: str | None) -> tuple:
     normalized_code = (employee_code or "").strip().upper()
     normalized_name = _normalize_join_name(employee_name)
-    return (work_date, normalized_code, normalized_name)
+
+    if normalized_code:
+        return (work_date, normalized_code, "")
+
+    return (work_date, "", normalized_name)
 
 
 def is_excluded_post(post_code: str | None) -> bool:
@@ -344,7 +361,7 @@ def is_excluded_post(post_code: str | None) -> bool:
 
 def match_ignore_target(employee_code: str | None, employee_name: str | None, post_code: str | None, ignore_sets: dict[str, set[str]]) -> bool:
     normalized_code = (employee_code or "").strip().upper()
-    normalized_name = (employee_name or "").strip()
+    normalized_name = _normalize_join_name(employee_name)
     normalized_post = (post_code or "").strip().upper()
     return (
         normalized_code in ignore_sets["employee_codes"]
@@ -518,16 +535,6 @@ def _detect_fixed_columns(header_row: list) -> dict[str, int]:
                 fixed_columns[target] = idx
                 break
     return fixed_columns
-
-
-def _detect_date_row_and_columns(raw_df: pd.DataFrame, header_row_idx: int, fixed_columns: dict[str, int], context_hint: str) -> tuple[int | None, list[tuple[int, date]]]:
-    first_shift_column = max(fixed_columns.values()) + 1
-    for row_idx in range(header_row_idx - 1, max(header_row_idx - 4, -1), -1):
-        row = raw_df.iloc[row_idx].tolist()
-        current_date_columns = _extract_date_columns_from_row(row, fixed_columns, context_hint=context_hint, raw_df=raw_df)
-        if len(current_date_columns) >= 2:
-            return row_idx, current_date_columns
-    return None, []
 
 
 def _extract_year_month_hint(raw_df: pd.DataFrame, context_hint: str) -> tuple[int, int]:
