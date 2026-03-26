@@ -1,6 +1,3 @@
-
-
-
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -10,36 +7,87 @@ from io import StringIO
 import pandas as pd
 
 
-raise ValueError("LOADED_THIS_ATTENDANCE_PARSER_20260322")
-
-
 EXCLUDED_POSTS = {"AM", "SV"}
 SHIFT_DIRECT_PATTERN = re.compile(r"^\s*(\d{1,2})(?::?(\d{2}))?\s*[-~]\s*(\d{1,2})(?::?(\d{2}))?\s*$")
 
 SHIFT_COLUMN_CANDIDATES = {
-    "work_date": ["\u65e5\u4ed8", "\u52e4\u52d9\u65e5", "\u5bfe\u8c61\u65e5", "date", "work_date"],
-    "employee_code": ["id", "\u793e\u54e1id", "\u793e\u54e1\u30b3\u30fc\u30c9", "\u5f93\u696d\u54e1\u30b3\u30fc\u30c9", "employee_code", "code"],
-    "employee_name": ["\u6c0f\u540d", "\u540d\u524d", "\u793e\u54e1\u540d", "\u5f93\u696d\u54e1\u540d", "name", "employee_name"],
-    "team_name": ["team", "\u30c1\u30fc\u30e0", "\u6240\u5c5e", "\u6240\u5c5e\u30c1\u30fc\u30e0", "team_name"],
-    "post_code": ["post", "\u5f79\u8077", "\u30dd\u30b9\u30c8", "post_code"],
-    "shift_raw": ["\u30b7\u30d5\u30c8", "\u52e4\u52d9", "\u52e4\u52d9\u8a18\u53f7", "\u30b7\u30d5\u30c8\u5165\u529b", "shift", "shift_code"],
+    "work_date": ["日付", "勤務日", "対象日", "date", "work_date"],
+    "employee_code": ["id", "社員id", "社員コード", "従業員コード", "employee_code", "code"],
+    "employee_name": ["氏名", "名前", "社員名", "従業員名", "name", "employee_name"],
+    "team_name": ["team", "チーム", "所属", "所属チーム", "team_name"],
+    "post_code": ["post", "役職", "ポスト", "post_code"],
+    "shift_raw": ["シフト", "勤務", "勤務記号", "シフト入力", "shift", "shift_code"],
 }
 
 PUNCH_COLUMN_CANDIDATES = {
-    "work_date": ["\u65e5\u4ed8", "\u52e4\u52d9\u65e5", "\u5bfe\u8c61\u65e5", "date", "work_date"],
-    "employee_code": ["id", "\u793e\u54e1id", "\u793e\u54e1\u30b3\u30fc\u30c9", "\u5f93\u696d\u54e1\u30b3\u30fc\u30c9", "employee_code", "code"],
-    "employee_name": ["\u6c0f\u540d", "\u540d\u524d", "\u793e\u54e1\u540d", "\u5f93\u696d\u54e1\u540d", "name", "employee_name"],
-    "team_name": ["team", "\u30c1\u30fc\u30e0", "\u6240\u5c5e", "\u6240\u5c5e\u30c1\u30fc\u30e0", "team_name"],
-    "post_code": ["post", "\u5f79\u8077", "\u30dd\u30b9\u30c8", "post_code"],
-    "actual_start": ["\u958b\u59cb", "\u51fa\u52e4", "\u958b\u59cb\u6642\u523b", "start", "clock_in", "actual_start"],
-    "actual_end": ["\u7d42\u4e86", "\u9000\u52e4", "\u7d42\u4e86\u6642\u523b", "end", "clock_out", "actual_end"],
+    "work_date": [
+        "日付",
+        "勤務日",
+        "対象日",
+        "date",
+        "work_date",
+        "年月日",
+        "(年月日)",
+        "（年月日）",
+    ],
+    "employee_code": [
+        "id",
+        "社員id",
+        "社員コード",
+        "従業員コード",
+        "employee_code",
+        "code",
+        "スタッフcd",
+        "スタッフコード",
+        "スタッフCD",
+    ],
+    "employee_name": [
+        "氏名",
+        "名前",
+        "社員名",
+        "従業員名",
+        "name",
+        "employee_name",
+    ],
+    "team_name": [
+        "team",
+        "チーム",
+        "所属",
+        "所属チーム",
+        "team_name",
+        "所属グループ名",
+    ],
+    "post_code": [
+        "post",
+        "役職",
+        "ポスト",
+        "post_code",
+    ],
+    "actual_start": [
+        "打刻開始",
+        "actual_start",
+        "clock_in",
+        "開始時刻",
+        "出勤",
+        "開始",
+        "start",
+    ],
+    "actual_end": [
+        "打刻終了",
+        "actual_end",
+        "clock_out",
+        "終了時刻",
+        "退勤",
+        "終了",
+        "end",
+    ],
 }
 
 MATRIX_FIXED_COLUMN_CANDIDATES = {
-    "employee_code": ["id", "\u793e\u54e1id", "\u793e\u54e1\u756a\u53f7", "\u793e\u54e1\u30b3\u30fc\u30c9", "\u5f93\u696d\u54e1\u30b3\u30fc\u30c9", "code"],
-    "team_name": ["team", "\u30c1\u30fc\u30e0", "\u6240\u5c5e", "\u6240\u5c5e\u30c1\u30fc\u30e0"],
-    "post_code": ["post", "\u5f79\u8077", "\u30dd\u30b9\u30c8"],
-    "employee_name": ["\u6c0f\u540d", "\u540d\u524d", "\u793e\u54e1\u540d", "\u5f93\u696d\u54e1\u540d", "\u7a3c\u50cd\u6642\u9593", "op\u7a3c\u50cd\u6642\u9593", "name"],
+    "employee_code": ["id", "社員id", "社員番号", "社員コード", "従業員コード", "code"],
+    "team_name": ["team", "チーム", "所属", "所属チーム"],
+    "post_code": ["post", "役職", "ポスト"],
+    "employee_name": ["氏名", "名前", "社員名", "従業員名", "稼働時間", "op稼働時間", "name"],
 }
 
 
@@ -63,7 +111,7 @@ class ParsedActual:
 
 def read_uploaded_table(uploaded_file) -> pd.DataFrame:
     if uploaded_file is None:
-        raise ValueError("\u30d5\u30a1\u30a4\u30eb\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002")
+        raise ValueError("ファイルが選択されていません。")
 
     filename = uploaded_file.name.lower()
     payload = uploaded_file.getvalue()
@@ -80,12 +128,12 @@ def read_uploaded_table(uploaded_file) -> pd.DataFrame:
     if filename.endswith((".xlsx", ".xlsm", ".xls")):
         buffer.seek(0)
         return pd.read_excel(buffer)
-    raise ValueError("\u5bfe\u5fdc\u3057\u3066\u3044\u306a\u3044\u30d5\u30a1\u30a4\u30eb\u5f62\u5f0f\u3067\u3059\u3002CSV \u307e\u305f\u306f Excel \u3092\u4f7f\u7528\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+    raise ValueError("対応していないファイル形式です。CSV または Excel を使用してください。")
 
 
 def read_uploaded_shift_table(uploaded_file) -> pd.DataFrame:
     if uploaded_file is None:
-        raise ValueError("\u30b7\u30d5\u30c8\u30d5\u30a1\u30a4\u30eb\u304c\u9078\u629e\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002")
+        raise ValueError("シフトファイルが選択されていません。")
 
     filename = uploaded_file.name.lower()
     payload = uploaded_file.getvalue()
@@ -102,12 +150,12 @@ def read_uploaded_shift_table(uploaded_file) -> pd.DataFrame:
     if filename.endswith((".xlsx", ".xlsm", ".xls")):
         buffer.seek(0)
         return pd.read_excel(buffer, header=None, dtype=str)
-    raise ValueError("\u5bfe\u5fdc\u3057\u3066\u3044\u306a\u3044\u30d5\u30a1\u30a4\u30eb\u5f62\u5f0f\u3067\u3059\u3002CSV \u307e\u305f\u306f Excel \u3092\u4f7f\u7528\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+    raise ValueError("対応していないファイル形式です。CSV または Excel を使用してください。")
 
 
 def read_pasted_shift_text(text: str) -> pd.DataFrame:
     if not text or not text.strip():
-        raise ValueError("\u8cbc\u308a\u4ed8\u3051\u30b7\u30d5\u30c8\u30c6\u30ad\u30b9\u30c8\u304c\u7a7a\u3067\u3059\u3002")
+        raise ValueError("貼り付けシフトテキストが空です。")
     frame = pd.read_csv(StringIO(text), sep="\t", header=None, dtype=str, keep_default_na=False, engine="python")
     return frame.fillna("")
 
@@ -120,7 +168,7 @@ def prepare_shift_dataframe(raw_df: pd.DataFrame, context_hint: str = "") -> pd.
     if is_monthly_shift_matrix(raw_df, context_hint=context_hint):
         return convert_monthly_shift_matrix_to_rows(raw_df, context_hint=context_hint)
 
-    raise ValueError("\u30b7\u30d5\u30c8\u8868\u306e\u30d8\u30c3\u30c0\u3092\u691c\u51fa\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002")
+    raise ValueError("シフト表のヘッダを検出できませんでした。")
 
 
 def normalize_shift_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -181,9 +229,9 @@ def parse_shift_row(work_date: date, shift_raw: str | None, rule_lookup: dict[st
         end_dt = combine_date_and_parts(work_date, match.group(3), match.group(4))
         if end_dt <= start_dt:
             end_dt += timedelta(days=1)
-        return ParsedShift(raw, "work", start_dt, end_dt, f"{format_clock(start_dt)}-{format_clock(end_dt)}", "\u76f4\u66f8\u304d\u30b7\u30d5\u30c8")
+        return ParsedShift(raw, "work", start_dt, end_dt, f"{format_clock(start_dt)}-{format_clock(end_dt)}", "直書きシフト")
 
-    return ParsedShift(raw, "unknown", None, None, raw, "\u52e4\u52d9\u8a18\u53f7\u3092\u89e3\u91c8\u3067\u304d\u307e\u305b\u3093")
+    return ParsedShift(raw, "unknown", None, None, raw, "勤務記号を解釈できません")
 
 
 def parse_actual_row(work_date: date, actual_start: str | None, actual_end: str | None) -> ParsedActual:
@@ -200,7 +248,7 @@ def parse_actual_row(work_date: date, actual_start: str | None, actual_end: str 
         return ParsedActual(start_dt, end_dt, f"{format_clock(start_dt)}-{format_clock(end_dt)}")
     if not actual_start and not actual_end:
         return ParsedActual(None, None, "-")
-    return ParsedActual(start_dt, end_dt, "-", "\u958b\u59cb\u307e\u305f\u306f\u7d42\u4e86\u306e\u3069\u3061\u3089\u304b\u304c\u6b20\u843d\u3057\u3066\u3044\u307e\u3059")
+    return ParsedActual(start_dt, end_dt, "-", "開始または終了のどちらかが欠落しています")
 
 
 def parse_clock_value(work_date: date, value) -> datetime | None:
@@ -212,12 +260,17 @@ def parse_clock_value(work_date: date, value) -> datetime | None:
     if pd.notna(parsed):
         if isinstance(parsed, pd.Timestamp):
             if parsed.year == 1970 and parsed.month == 1 and parsed.day == 1:
-                return datetime.combine(work_date, parsed.time())
+                return combine_date_and_parts(
+                    work_date,
+                    str(parsed.hour),
+                    f"{parsed.minute:02d}",
+                )
             return parsed.to_pydatetime()
 
     match = re.match(r"^\s*(\d{1,2})(?::?(\d{2}))?\s*$", text)
     if not match:
         return None
+
     return combine_date_and_parts(work_date, match.group(1), match.group(2))
 
 
@@ -225,11 +278,23 @@ def combine_date_and_hhmm(work_date: date, value: str | None) -> datetime | None
     if not value:
         return None
     hour_text, minute_text = value.split(":")
-    return datetime.combine(work_date, time(hour=int(hour_text), minute=int(minute_text)))
+    return combine_date_and_parts(work_date, hour_text, minute_text)
 
 
 def combine_date_and_parts(work_date: date, hour_text: str, minute_text: str | None) -> datetime:
-    return datetime.combine(work_date, time(hour=int(hour_text), minute=int(minute_text or 0)))
+    hour = int(hour_text)
+    minute = int(minute_text or 0)
+
+    if minute < 0 or minute > 59:
+        raise ValueError(f"minute must be in 0..59: {hour_text}:{minute_text}")
+
+    day_offset = 0
+    if hour >= 24:
+        day_offset = hour // 24
+        hour = hour % 24
+
+    base_date = work_date + timedelta(days=day_offset)
+    return datetime.combine(base_date, time(hour=hour, minute=minute))
 
 
 def round_to_30_minutes(value: datetime) -> datetime:
@@ -261,8 +326,16 @@ def format_display_date(value: date | None) -> str:
     return value.strftime("%Y-%m-%d") if value else "-"
 
 
+def _normalize_join_name(value: str | None) -> str:
+    text = (value or "").replace("\u3000", " ")
+    text = re.sub(r"\s+", " ", text.strip())
+    return text
+
+
 def make_join_key(work_date: date, employee_code: str | None, employee_name: str | None) -> tuple:
-    return (work_date, (employee_code or "").strip().upper(), (employee_name or "").strip())
+    normalized_code = (employee_code or "").strip().upper()
+    normalized_name = _normalize_join_name(employee_name)
+    return (work_date, normalized_code, normalized_name)
 
 
 def is_excluded_post(post_code: str | None) -> bool:
@@ -297,8 +370,8 @@ def to_csv_bytes(rows: list[dict]) -> bytes:
 def detect_vertical_shift_header_row(raw_df: pd.DataFrame) -> int | None:
     for row_idx in range(len(raw_df)):
         row_values = [_normalize_header(value) for value in raw_df.iloc[row_idx].tolist()]
-        has_date = any(token in row_values for token in [_normalize_header("\u65e5\u4ed8"), _normalize_header("\u52e4\u52d9\u65e5"), "date", "workdate"])
-        has_shift = any(token in row_values for token in [_normalize_header("\u30b7\u30d5\u30c8"), _normalize_header("\u52e4\u52d9\u8a18\u53f7"), _normalize_header("\u30b7\u30d5\u30c8\u5165\u529b"), "shift", "shiftcode"])
+        has_date = any(token in row_values for token in [_normalize_header("日付"), _normalize_header("勤務日"), "date", "workdate"])
+        has_shift = any(token in row_values for token in [_normalize_header("シフト"), _normalize_header("勤務記号"), _normalize_header("シフト入力"), "shift", "shiftcode"])
         if has_date and has_shift:
             return row_idx
     return None
@@ -334,7 +407,7 @@ def detect_monthly_matrix_header(raw_df: pd.DataFrame, context_hint: str = "") -
 def convert_monthly_shift_matrix_to_rows(raw_df: pd.DataFrame, context_hint: str = "", detected: dict | None = None) -> pd.DataFrame:
     detected = detected or detect_monthly_matrix_header(raw_df, context_hint=context_hint)
     if detected is None:
-        raise ValueError("\u6708\u6b21\u30b7\u30d5\u30c8\u30de\u30c8\u30ea\u30af\u30b9\u3092\u691c\u51fa\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002")
+        raise ValueError("月次シフトマトリクスを検出できませんでした。")
 
     header_row_idx = detected["header_row_idx"]
     fixed_columns = detected["fixed_columns"]
@@ -406,7 +479,7 @@ def _normalize_table(df: pd.DataFrame, candidates: dict[str, list[str]], require
     standardized = df.rename(columns=renamed).copy()
     for field in required_fields:
         if field not in standardized.columns:
-            raise ValueError(f"\u5fc5\u9808\u5217 `{field}` \u3092\u5224\u5b9a\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002")
+            raise ValueError(f"必須列 `{field}` を判定できませんでした。")
     for optional in candidates:
         if optional not in standardized.columns:
             standardized[optional] = None
@@ -414,7 +487,7 @@ def _normalize_table(df: pd.DataFrame, candidates: dict[str, list[str]], require
 
 
 def _normalize_header(value) -> str:
-    return re.sub(r"[\s_\-/\uFF08\uFF09()]+", "", str(value).strip().lower())
+    return re.sub(r"[\s_\-/（）()]+", "", str(value).strip().lower())
 
 
 def _find_column(normalized_columns: dict[str, str], labels: list[str]) -> str | None:
@@ -470,7 +543,7 @@ def _extract_year_month_hint(raw_df: pd.DataFrame, context_hint: str) -> tuple[i
     if full_match:
         return int(full_match.group(1)), int(full_match.group(2))
 
-    month_match = re.search(r"(1[0-2]|0?[1-9])\s*\u6708", joined_text)
+    month_match = re.search(r"(1[0-2]|0?[1-9])\s*月", joined_text)
     if month_match:
         return datetime.today().year, int(month_match.group(1))
 
@@ -489,7 +562,6 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
     if not text:
         return None
 
-    # Excel serial date support
     if re.fullmatch(r"\d+(\.0+)?", text):
         serial = int(float(text))
         if 30000 <= serial <= 60000:
@@ -533,6 +605,7 @@ def _parse_matrix_date_cell(value, year_month_hint: tuple[int, int]) -> date | N
 
     return None
 
+
 def _cell_value(row: list, index: int | None) -> str | None:
     if index is None or index >= len(row):
         return None
@@ -556,11 +629,11 @@ def _looks_like_employee_row(employee_code: str | None, employee_name: str | Non
 
     combined = " ".join(part for part in [employee_code, employee_name, team_name, post_code] if part)
     normalized = _normalize_header(combined)
-    if any(token in normalized for token in [_normalize_header("\u5fc5\u8981\u4eba\u6570"), "headcount", _normalize_header("\u66dc\u65e5")]):
+    if any(token in normalized for token in [_normalize_header("必要人数"), "headcount", _normalize_header("曜日")]):
         return False
     if employee_name and re.fullmatch(r"\d+(\.\d+)?", employee_name.strip()):
         return False
-    if team_name and _normalize_header(team_name) in {_normalize_header("team"), _normalize_header("\u30c1\u30fc\u30e0")}:
+    if team_name and _normalize_header(team_name) in {_normalize_header("team"), _normalize_header("チーム")}:
         return False
     if employee_code and _normalize_header(employee_code) == _normalize_header("id"):
         return False
@@ -569,9 +642,9 @@ def _looks_like_employee_row(employee_code: str | None, employee_name: str | Non
 
 def _display_for_nonwork(raw: str, rule_type: str) -> str:
     if rule_type == "paid_leave":
-        return f"{raw} (\u52e4\u52d9\u306a\u3057 / 8:00\u6271\u3044)"
+        return f"{raw} (勤務なし / 8:00扱い)"
     if rule_type == "off":
-        return f"{raw} (\u52e4\u52d9\u306a\u3057)"
+        return f"{raw} (勤務なし)"
     if rule_type == "ignore":
-        return f"{raw} (\u7121\u8996)"
+        return f"{raw} (無視)"
     return raw

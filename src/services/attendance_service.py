@@ -51,7 +51,15 @@ class AttendanceService:
         self.attendance_repository = attendance_repository
         self.audit_service = audit_service
 
-    def run_reconciliation(self, actor_id: int | None, target_label: str, punch_file, shift_file=None, shift_text: str = "", shift_input_mode: str = "file"):
+    def run_reconciliation(
+        self,
+        actor_id: int | None,
+        target_label: str,
+        punch_file,
+        shift_file=None,
+        shift_text: str = "",
+        shift_input_mode: str = "file",
+    ):
         shift_filename = shift_file.name if shift_file is not None else "pasted_shift.tsv"
         shift_context_hint = " ".join(part for part in [target_label, shift_filename] if part)
 
@@ -60,8 +68,19 @@ class AttendanceService:
         else:
             shift_raw_df = read_uploaded_shift_table(shift_file)
 
-        shift_df = normalize_shift_frame(prepare_shift_dataframe(shift_raw_df, context_hint=shift_context_hint))
-        punch_df = normalize_punch_frame(read_uploaded_table(punch_file))
+        try:
+            shift_prepared_df = prepare_shift_dataframe(shift_raw_df, context_hint=shift_context_hint)
+            shift_df = normalize_shift_frame(shift_prepared_df)
+        except Exception as exc:
+            raise ValueError(f"シフト側エラー: {exc}")
+
+        punch_raw_df = read_uploaded_table(punch_file)
+
+        try:
+            punch_df = normalize_punch_frame(punch_raw_df)
+        except Exception as exc:
+            raise ValueError(f"打刻CSV側エラー: {exc} / columns={list(punch_raw_df.columns)}")
+
         if shift_df.empty:
             raise ValueError("シフトファイルに有効なデータがありません。")
         if punch_df.empty:
