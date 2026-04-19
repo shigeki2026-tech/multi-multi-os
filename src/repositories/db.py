@@ -1,14 +1,26 @@
 import os
 from contextlib import contextmanager
 
+import streamlit as st
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.models.base import Base
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///multimulti_os.db")
+def _get_database_url() -> str:
+    # Streamlit Secretsから取得を試みる
+    try:
+        url = st.secrets["DATABASE_URL"]
+        if url:
+            return url
+    except Exception:
+        pass
+    # .envまたは環境変数から取得
+    return os.getenv("DATABASE_URL", "sqlite:///multimulti_os.db")
 
+
+DATABASE_URL = _get_database_url()
 engine = create_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
