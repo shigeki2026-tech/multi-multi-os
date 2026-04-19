@@ -1,4 +1,7 @@
 import os
+
+os.environ['PGCLIENTENCODING'] = 'utf8'
+
 from contextlib import contextmanager
 
 import streamlit as st
