@@ -12,15 +12,14 @@ from src.models.base import Base
 
 
 def _get_database_url() -> str:
-    # Streamlit Secretsから取得を試みる
     try:
         url = st.secrets["DATABASE_URL"]
         if url:
             return url
-    except Exception:
+    except Exception as e:
         pass
-    # .envまたは環境変数から取得
-    return os.getenv("DATABASE_URL", "sqlite:///multimulti_os.db")
+    url = os.getenv("DATABASE_URL", "sqlite:///multimulti_os.db")
+    return url
 
 
 DATABASE_URL = _get_database_url()
