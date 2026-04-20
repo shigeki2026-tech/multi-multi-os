@@ -6,21 +6,64 @@ from src.models.entities import Project, Team, User
 from src.utils.serializers import to_dict
 
 
-class MasterService:
-    def __init__(self, master_repository, audit_service=None):
-        self.master_repository = master_repository
-        self.audit_service = audit_service
+# ---------------------------------------------------------------------------
+# モジュールレベルのキャッシュ関数
+# @st.cache_data はハッシュ可能な引数が必要なため、
+# インスタンスメソッドではなく db_url: str をキーにする独立関数として定義する
+# ---------------------------------------------------------------------------
 
-    @st.cache_data(ttl=300)
-    def user_options(self):
-        teams = {team.team_id: team.team_name for team in self.master_repository.list_teams()}
+@st.cache_data(ttl=300)
+def _cached_user_options(db_url: str) -> list:
+    from src.repositories.db import get_session
+    from src.repositories.master_repository import MasterRepository
+    with get_session() as session:
+        repo = MasterRepository(session)
+        teams = {team.team_id: team.team_name for team in repo.list_teams()}
         return [
             {
                 "value": user.user_id,
                 "label": f"{user.display_name} / {user.role} / {teams.get(user.team_id, 'チーム未設定')}",
             }
-            for user in self.master_repository.list_users(active_only=True)
+            for user in repo.list_users(active_only=True)
         ]
+
+
+@st.cache_data(ttl=300)
+def _cached_team_options(db_url: str) -> list:
+    from src.repositories.db import get_session
+    from src.repositories.master_repository import MasterRepository
+    with get_session() as session:
+        repo = MasterRepository(session)
+        return [
+            {"value": team.team_id, "label": team.team_name}
+            for team in repo.list_teams(active_only=True)
+        ]
+
+
+@st.cache_data(ttl=300)
+def _cached_project_options(db_url: str) -> list:
+    from src.repositories.db import get_session
+    from src.repositories.master_repository import MasterRepository
+    with get_session() as session:
+        repo = MasterRepository(session)
+        return [
+            {"value": project.project_id, "label": project.project_name, "color": project.color}
+            for project in repo.list_projects(active_only=True)
+        ]
+
+
+# ---------------------------------------------------------------------------
+# MasterService
+# ---------------------------------------------------------------------------
+
+class MasterService:
+    def __init__(self, master_repository, audit_service=None):
+        self.master_repository = master_repository
+        self.audit_service = audit_service
+
+    def user_options(self):
+        from src.repositories.db import DATABASE_URL
+        return _cached_user_options(DATABASE_URL)
 
     def list_users_for_admin(self):
         teams = {team.team_id: team.team_name for team in self.master_repository.list_teams()}
@@ -65,9 +108,9 @@ class MasterService:
             self.audit_service.log("users", user.user_id, "create", actor_id, after=user)
         return user
 
-    @st.cache_data(ttl=300)
     def team_options(self):
-        return [{"value": team.team_id, "label": team.team_name} for team in self.master_repository.list_teams(active_only=True)]
+        from src.repositories.db import DATABASE_URL
+        return _cached_team_options(DATABASE_URL)
 
     def list_teams_for_admin(self):
         return [
@@ -98,12 +141,9 @@ class MasterService:
             self.audit_service.log("teams", team.team_id, "update", actor_id, before=_DictProxy(before), after=team)
         return team
 
-    @st.cache_data(ttl=300)
     def project_options(self):
-        return [
-            {"value": project.project_id, "label": project.project_name, "color": project.color}
-            for project in self.master_repository.list_projects(active_only=True)
-        ]
+        from src.repositories.db import DATABASE_URL
+        return _cached_project_options(DATABASE_URL)
 
     def list_projects_for_admin(self):
         teams = {team.team_id: team.team_name for team in self.master_repository.list_teams()}
