@@ -1,2 +1,6 @@
+[server]
+runOnSave = false
+
 [client]
 showSidebarNavigation = false
+showErrorDetails = false

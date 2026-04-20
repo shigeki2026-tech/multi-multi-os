@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import streamlit as st
+
 from src.models.entities import Project, Team, User
 from src.utils.serializers import to_dict
 
@@ -9,6 +11,7 @@ class MasterService:
         self.master_repository = master_repository
         self.audit_service = audit_service
 
+    @st.cache_data(ttl=300)
     def user_options(self):
         teams = {team.team_id: team.team_name for team in self.master_repository.list_teams()}
         return [
@@ -62,6 +65,7 @@ class MasterService:
             self.audit_service.log("users", user.user_id, "create", actor_id, after=user)
         return user
 
+    @st.cache_data(ttl=300)
     def team_options(self):
         return [{"value": team.team_id, "label": team.team_name} for team in self.master_repository.list_teams(active_only=True)]
 
@@ -94,6 +98,7 @@ class MasterService:
             self.audit_service.log("teams", team.team_id, "update", actor_id, before=_DictProxy(before), after=team)
         return team
 
+    @st.cache_data(ttl=300)
     def project_options(self):
         return [
             {"value": project.project_id, "label": project.project_name, "color": project.color}
