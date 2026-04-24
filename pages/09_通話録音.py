@@ -89,82 +89,119 @@ for _k, _v in _defaults.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# ── CSS (デザイントークン準拠) ────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
+:root {
+  --blue-500:    oklch(0.60 0.18 255);
+  --blue-600:    oklch(0.52 0.19 255);
+  --blue-700:    oklch(0.44 0.17 255);
+  --accent-green:oklch(0.68 0.14 155);
+  --accent-rose: oklch(0.66 0.17 20);
+  --bg:          oklch(0.985 0.004 255);
+  --bg-panel:    oklch(1.000 0.000 0);
+  --bg-sunken:   oklch(0.965 0.006 255);
+  --bg-hover:    oklch(0.955 0.010 255);
+  --border:      oklch(0.91 0.008 255);
+  --border-strong: oklch(0.84 0.012 255);
+  --fg:          oklch(0.22 0.02 255);
+  --fg-muted:    oklch(0.48 0.015 255);
+  --fg-subtle:   oklch(0.62 0.015 255);
+  --shadow-sm:   0 1px 2px 0 oklch(0.2 0.02 255 / 0.04);
+  --shadow-md:   0 4px 16px -4px oklch(0.2 0.02 255 / 0.08),
+                 0 2px 4px -2px oklch(0.2 0.02 255 / 0.04);
+  --radius:      8px;
+  --radius-lg:   12px;
+}
+
 html, body, [class*="css"] {
-    font-family: 'Yu Gothic', 'Noto Sans JP', sans-serif;
+  font-family: "Yu Gothic","游ゴシック","YuGothic","Hiragino Sans","Noto Sans JP",sans-serif;
+  font-feature-settings: "palt" 1;
+  font-size: 13px;
+  color: var(--fg);
 }
 
+/* ── Recording panel ── */
 .rec-panel {
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 12px;
-    padding: 1.1rem 1.5rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
-    margin-bottom: 1.25rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 1rem;
 }
 
+/* ── Log panel ── */
 .log-panel {
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 12px;
-    padding: 1.25rem 1.5rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-md);
 }
 
+/* ── Speaker card headers ── */
 .caller-hdr {
-    background: #EFF6FF;
-    border: 1px solid #BFDBFE;
-    border-radius: 8px 8px 0 0;
-    padding: 0.35rem 0.75rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: #1D4ED8;
-    margin-top: 0.5rem;
-    margin-bottom: -0.5rem;
+  background: color-mix(in oklch, var(--blue-500) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--blue-500) 28%, transparent);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 0.32rem 0.75rem;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--blue-600);
+  letter-spacing: 0.02em;
+  margin-top: 0.6rem;
+  margin-bottom: -0.5rem;
 }
 
 .operator-hdr {
-    background: #F0FDF4;
-    border: 1px solid #BBF7D0;
-    border-radius: 8px 8px 0 0;
-    padding: 0.35rem 0.75rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: #15803D;
-    margin-top: 0.5rem;
-    margin-bottom: -0.5rem;
+  background: color-mix(in oklch, var(--accent-green) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-green) 28%, transparent);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 0.32rem 0.75rem;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent-green);
+  letter-spacing: 0.02em;
+  margin-top: 0.6rem;
+  margin-bottom: -0.5rem;
 }
 
+/* ── Recording dot ── */
 .rec-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #DC2626;
-    animation: blink 1s step-start infinite;
-    margin-right: 6px;
-    vertical-align: middle;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-rose);
+  animation: blink 1s step-start infinite;
+  margin-right: 6px;
+  vertical-align: middle;
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
 
+/* ── Copy button (pill-btn primary style) ── */
 .copy-btn {
-    background: oklch(0.60 0.18 255);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 0.42rem 1rem;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 0.875rem;
-    font-weight: 600;
-    width: 100%;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--blue-600);
+  color: var(--fg-onbrand, #fff);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
 }
-.copy-btn:hover { opacity: 0.9; }
+.copy-btn:hover { background: var(--blue-700); }
 </style>
 """, unsafe_allow_html=True)
 
