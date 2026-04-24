@@ -6,3 +6,6 @@ openpyxl==3.1.5
 python-dotenv==1.0.1
 google-api-python-client==2.165.0
 google-auth==2.38.0
+faster-whisper
+sounddevice
+soundfile
