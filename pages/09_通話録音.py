@@ -3,10 +3,18 @@ import os
 import threading
 from datetime import datetime
 
-import numpy as np
-import sounddevice as sd
-import soundfile as sf
 import streamlit as st
+
+# Heavy / hardware-dependent imports are deferred to avoid crashing the page
+# on environments where PortAudio / audio hardware is unavailable.
+try:
+    import numpy as np
+    import sounddevice as sd
+    import soundfile as sf
+    _AUDIO_AVAILABLE = True
+except Exception as _audio_err:
+    _AUDIO_AVAILABLE = False
+    _AUDIO_ERROR = str(_audio_err)
 
 from src.ui.bootstrap import ensure_app_ready
 from src.ui.session import ensure_logged_in, render_sidebar
@@ -163,6 +171,13 @@ html, body, [class*="css"] {
 # ── Header ────────────────────────────────────────────────────────────────────
 st.title("通話録音・文字起こし")
 st.caption("先方音声とオペレーター音声を同時録音し、Whisper で自動文字起こしします。")
+
+if not _AUDIO_AVAILABLE:
+    st.error(
+        f"⚠️ オーディオライブラリを読み込めませんでした。"
+        f"このページはローカル環境（PortAudio が使えるPC）でのみ動作します。\n\n`{_AUDIO_ERROR}`"
+    )
+    st.stop()
 
 # ── Recording controls ────────────────────────────────────────────────────────
 st.markdown('<div class="rec-panel">', unsafe_allow_html=True)
