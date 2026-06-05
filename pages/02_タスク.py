@@ -2,9 +2,6 @@ from datetime import date
 
 import streamlit as st
 
-from src.services.container import service_scope
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
 
 
 TASK_TYPES = [
@@ -150,6 +147,10 @@ def render_task_card(task: dict, actor_id: int):
 
 
 st.set_page_config(page_title="タスク", layout="wide")
+
+from src.services.container import service_scope
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_logged_in, render_sidebar
 ensure_app_ready()
 user = ensure_logged_in()
 render_sidebar(user)

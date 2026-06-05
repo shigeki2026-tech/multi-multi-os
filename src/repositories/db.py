@@ -8,13 +8,7 @@ from src.models.base import Base
 
 
 def _get_database_url() -> str:
-    try:
-        import streamlit as st
-        url = st.secrets.get("DATABASE_URL")
-        if url:
-            return str(url)
-    except Exception:
-        pass
+    """Resolve DB URL without touching Streamlit APIs at import time."""
     return os.getenv("DATABASE_URL", "sqlite:///multimulti_os.db")
 
 

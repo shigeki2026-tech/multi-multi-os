@@ -1,8 +1,5 @@
 import streamlit as st
 
-from src.services.container import service_scope
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
 
 
 def render_summary_card(title: str, value):
@@ -17,6 +14,10 @@ def render_empty_state(message: str):
 
 
 st.set_page_config(page_title="ダッシュボード", layout="wide")
+
+from src.services.container import service_scope
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_logged_in, render_sidebar
 ensure_app_ready()
 user = ensure_logged_in()
 render_sidebar(user)

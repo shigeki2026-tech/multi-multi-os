@@ -1,8 +1,5 @@
 import streamlit as st
 
-from src.services.container import service_scope
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_admin, ensure_logged_in, render_sidebar
 
 
 ROLES = ["admin", "sv"]
@@ -27,6 +24,10 @@ def color_chip(color: str) -> str:
 
 
 st.set_page_config(page_title="管理", layout="wide")
+
+from src.services.container import service_scope
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_admin, ensure_logged_in, render_sidebar
 ensure_app_ready()
 user = ensure_logged_in()
 ensure_admin(user)
