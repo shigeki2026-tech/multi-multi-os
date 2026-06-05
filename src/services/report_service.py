@@ -91,6 +91,35 @@ class ReportService(ReportServiceInterface):
             "preview": preview,
         }
 
+    def save_draft(self, actor_id: int, payload: dict):
+        """Gmail送信を行わず、作成した日報を履歴(draft)として保存する。
+
+        日報画面の主軸は「作成・プレビュー・コピー・ファイル出力・履歴保存」であり、
+        送信は feature flag (GMAIL_ENABLED) の裏に置く。本メソッドは送信を一切伴わない。
+        """
+        preview = self.build_preview(actor_id, payload)
+        job = ReportJob(
+            report_type=payload.get("report_type", "daily_report"),
+            target_date=payload["target_date"],
+            payload_json={
+                "to_addresses": preview["to_addresses"],
+                "invalid_to_addresses": preview["invalid_to_addresses"],
+                "summary": payload.get("summary", ""),
+                "highlights": payload.get("highlights", ""),
+                "issues": payload.get("issues", ""),
+                "next_actions": payload.get("next_actions", ""),
+                "subject": preview["subject"],
+                "error_message": None,
+            },
+            preview_text=preview["body"],
+            sent_at=None,
+            sent_by=actor_id,
+            send_status="draft",
+        )
+        self.report_repository.create_job(job)
+        self.audit_service.log("report_jobs", job.job_id, "create", actor_id, after=job)
+        return {"job_id": job.job_id, "message": "日報を履歴に保存しました。", "preview": preview}
+
     def list_history_for_display(self):
         user_map = {user.user_id: user.display_name for user in self.master_repository.list_users()}
         rows = []

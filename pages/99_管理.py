@@ -41,6 +41,10 @@ with service_scope() as container:
     team_rows = container.master_service.list_teams_for_admin()
     project_rows = container.master_service.list_projects_for_admin()
     user_rows = container.master_service.list_users_for_admin()
+    exclude_rows = container.answer_rate_master_service.list_exclude_numbers()
+    abandon_rows = container.answer_rate_master_service.list_abandon_rules()
+    merge_rows = container.answer_rate_master_service.list_skill_group_merge()
+    operator_rows = container.answer_rate_master_service.list_operators()
 
 st.title("管理")
 st.caption("利用者マスタ、チームマスタ、プロジェクトマスタ、監査ログを確認します。")
@@ -354,6 +358,157 @@ with st.container(border=True):
                         st.session_state.pop("editing_project_id", None)
                         st.success("プロジェクトを更新しました。")
                         st.rerun()
+
+st.header("応答率マスタ")
+st.caption("CDR取込（応答率エンジン）が参照するマスタです。削除はせず、有効/無効で管理します。")
+
+# --- 除外番号 (exclude_numbers) ---
+st.subheader("除外番号（テストコール等）")
+with st.container(border=True):
+    with st.form("create_exclude_form", clear_on_submit=True):
+        cols = st.columns([1.4, 2.0, 0.8])
+        new_number = cols[0].text_input("発信者番号")
+        new_reason = cols[1].text_input("理由")
+        add_exclude = cols[2].form_submit_button("追加", type="primary")
+        if add_exclude:
+            if not new_number.strip():
+                st.warning("発信者番号を入力してください。")
+            else:
+                with service_scope() as container:
+                    container.answer_rate_master_service.create_exclude_number(
+                        user["user_id"], new_number, new_reason
+                    )
+                st.success("除外番号を追加しました。")
+                st.rerun()
+
+    header = st.columns([1.4, 2.4, 0.8, 0.9])
+    for col, label in zip(header, ["発信者番号", "理由", "状態", "操作"]):
+        col.markdown(f"**{label}**")
+    for row in exclude_rows:
+        cols = st.columns([1.4, 2.4, 0.8, 0.9])
+        cols[0].write(row["caller_number"])
+        cols[1].caption(row["reason"] or "-")
+        cols[2].markdown(
+            badge("有効", "#16A34A") if row["is_active"] else badge("無効", "#6B7280"),
+            unsafe_allow_html=True,
+        )
+        if cols[3].button("有効/無効", key=f"toggle_exclude_{row['id']}"):
+            with service_scope() as container:
+                container.answer_rate_master_service.toggle_exclude_number(user["user_id"], row["id"])
+            st.rerun()
+
+# --- 放棄閾値 (abandon_rules) ---
+st.subheader("放棄閾値（秒数ルール）")
+with st.container(border=True):
+    st.caption("スキルグループ空欄＝全体既定。スキルグループ指定＝その値で上書きします。")
+    with st.form("create_abandon_form", clear_on_submit=True):
+        cols = st.columns([2.0, 1.2, 0.8])
+        new_sg = cols[0].text_input("スキルグループ（空欄=全体既定）")
+        new_threshold = cols[1].number_input("閾値秒数", min_value=0, step=1, value=0)
+        add_abandon = cols[2].form_submit_button("追加", type="primary")
+        if add_abandon:
+            with service_scope() as container:
+                container.answer_rate_master_service.create_abandon_rule(
+                    user["user_id"], new_sg, int(new_threshold)
+                )
+            st.success("閾値ルールを追加しました。")
+            st.rerun()
+
+    header = st.columns([2.2, 1.0, 0.8, 0.9])
+    for col, label in zip(header, ["スキルグループ", "閾値秒", "状態", "操作"]):
+        col.markdown(f"**{label}**")
+    for row in abandon_rows:
+        cols = st.columns([2.2, 1.0, 0.8, 0.9])
+        cols[0].write(row["skill_group"])
+        cols[1].write(f"{row['threshold_seconds']} 秒")
+        cols[2].markdown(
+            badge("有効", "#16A34A") if row["is_active"] else badge("無効", "#6B7280"),
+            unsafe_allow_html=True,
+        )
+        if cols[3].button("有効/無効", key=f"toggle_abandon_{row['id']}"):
+            with service_scope() as container:
+                container.answer_rate_master_service.toggle_abandon_rule(user["user_id"], row["id"])
+            st.rerun()
+
+# --- 合算定義 (skill_group_merge) ---
+st.subheader("合算定義（スキルグループ束ね）")
+with st.container(border=True):
+    st.caption("親ラベル ← 子スキルグループを1行ずつ登録します。合算値は保存せず表示時に都度計算します。")
+    with st.form("create_merge_form", clear_on_submit=True):
+        cols = st.columns([1.6, 1.8, 0.8])
+        new_label = cols[0].text_input("親ラベル")
+        new_child = cols[1].text_input("子スキルグループ")
+        add_merge = cols[2].form_submit_button("追加", type="primary")
+        if add_merge:
+            if not new_label.strip() or not new_child.strip():
+                st.warning("親ラベルと子スキルグループを入力してください。")
+            else:
+                with service_scope() as container:
+                    container.answer_rate_master_service.create_skill_group_merge(
+                        user["user_id"], new_label, new_child
+                    )
+                st.success("合算定義を追加しました。")
+                st.rerun()
+
+    header = st.columns([1.6, 1.8, 0.8, 0.9])
+    for col, label in zip(header, ["親ラベル", "子スキルグループ", "状態", "操作"]):
+        col.markdown(f"**{label}**")
+    for row in merge_rows:
+        cols = st.columns([1.6, 1.8, 0.8, 0.9])
+        cols[0].write(row["merge_label"])
+        cols[1].caption(row["child_skill_group"])
+        cols[2].markdown(
+            badge("有効", "#16A34A") if row["is_active"] else badge("無効", "#6B7280"),
+            unsafe_allow_html=True,
+        )
+        if cols[3].button("有効/無効", key=f"toggle_merge_{row['id']}"):
+            with service_scope() as container:
+                container.answer_rate_master_service.toggle_skill_group_merge(user["user_id"], row["id"])
+            st.rerun()
+
+# --- オペレーター (operators) ---
+st.subheader("オペレーター")
+with st.container(border=True):
+    st.caption("OP/オペレーターのマスタです（アプリ利用者=User とは別物）。")
+    with st.form("create_operator_form", clear_on_submit=True):
+        cols = st.columns([1.0, 1.4, 1.4, 1.0, 0.7])
+        op_code = cols[0].text_input("OPコード")
+        op_name = cols[1].text_input("表示名")
+        op_sg = cols[2].text_input("スキルグループ")
+        op_shift = cols[3].text_input("シフト種別（任意）")
+        add_op = cols[4].form_submit_button("追加", type="primary")
+        if add_op:
+            if not op_code.strip() or not op_name.strip():
+                st.warning("OPコードと表示名を入力してください。")
+            else:
+                try:
+                    with service_scope() as container:
+                        container.answer_rate_master_service.create_operator(
+                            user["user_id"], op_code, op_name, op_sg, op_shift
+                        )
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("オペレーターを追加しました。")
+                    st.rerun()
+
+    header = st.columns([1.0, 1.4, 1.4, 1.0, 0.8, 0.9])
+    for col, label in zip(header, ["OPコード", "表示名", "スキルグループ", "シフト", "状態", "操作"]):
+        col.markdown(f"**{label}**")
+    for row in operator_rows:
+        cols = st.columns([1.0, 1.4, 1.4, 1.0, 0.8, 0.9])
+        cols[0].write(row["op_code"])
+        cols[1].write(row["display_name"])
+        cols[2].caption(row["skill_group"] or "-")
+        cols[3].caption(row["shift_type"] or "-")
+        cols[4].markdown(
+            badge("有効", "#16A34A") if row["status"] == "active" else badge("無効", "#6B7280"),
+            unsafe_allow_html=True,
+        )
+        if cols[5].button("有効/無効", key=f"toggle_op_{row['id']}"):
+            with service_scope() as container:
+                container.answer_rate_master_service.toggle_operator(user["user_id"], row["id"])
+            st.rerun()
 
 st.subheader("アプリ一覧")
 st.dataframe(apps, use_container_width=True, hide_index=True)

@@ -119,7 +119,7 @@ def seed_if_needed():
                 AppRegistry(app_key="tasks", app_name="\u30bf\u30b9\u30af", description="\u30bf\u30b9\u30af\u7ba1\u7406", display_order=1),
                 AppRegistry(app_key="requests", app_name="SV\u4f9d\u983c", description="SV\u4f9d\u983c\u7ba1\u7406", display_order=2),
                 AppRegistry(app_key="leoc", app_name="\u5fdc\u7b54\u7387\u901f\u5831", description="\u5fdc\u7b54\u7387\u901f\u5831", display_order=3),
-                AppRegistry(app_key="reports", app_name="\u65e5\u5831\u9001\u4fe1", description="\u65e5\u5831\u9001\u4fe1", display_order=4),
+                AppRegistry(app_key="reports", app_name="\u65e5\u5831\u4f5c\u6210", description="\u65e5\u5831\u4f5c\u6210", display_order=4),
                 AppRegistry(app_key="call_details", app_name="\u547c\u8a73\u7d30\u4f5c\u6210", description="\u547c\u8a73\u7d30\u4f5c\u6210", display_order=5),
                 AppRegistry(app_key="attendance", app_name="\u6253\u523b\u7167\u5408", description="\u6708\u6b21\u7de0\u3081\u5411\u3051\u306e\u6253\u523b\u7167\u5408", display_order=6),
             ]
@@ -131,7 +131,7 @@ def ensure_registry_entries():
         {"app_key": "tasks", "app_name": "\u30bf\u30b9\u30af", "description": "\u30bf\u30b9\u30af\u7ba1\u7406", "display_order": 1},
         {"app_key": "requests", "app_name": "SV\u4f9d\u983c", "description": "SV\u4f9d\u983c\u7ba1\u7406", "display_order": 2},
         {"app_key": "leoc", "app_name": "\u5fdc\u7b54\u7387\u901f\u5831", "description": "\u5fdc\u7b54\u7387\u901f\u5831", "display_order": 3},
-        {"app_key": "reports", "app_name": "\u65e5\u5831\u9001\u4fe1", "description": "\u65e5\u5831\u9001\u4fe1", "display_order": 4},
+        {"app_key": "reports", "app_name": "\u65e5\u5831\u4f5c\u6210", "description": "\u65e5\u5831\u4f5c\u6210", "display_order": 4},
         {"app_key": "call_details", "app_name": "\u547c\u8a73\u7d30\u4f5c\u6210", "description": "\u547c\u8a73\u7d30\u4f5c\u6210", "display_order": 5},
         {"app_key": "attendance", "app_name": "\u6253\u523b\u7167\u5408", "description": "\u6708\u6b21\u7de0\u3081\u5411\u3051\u306e\u6253\u523b\u7167\u5408", "display_order": 6},
     ]

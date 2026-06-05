@@ -2,6 +2,10 @@
 .env
 *.zip
 *.db
+*.db.bak_*
+multimulti_os.db-wal
+multimulti_os.db-shm
+uploads/
 __pycache__/
 *.pyc
 Thumbs.db
