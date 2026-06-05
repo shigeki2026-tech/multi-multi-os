@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base
@@ -259,3 +259,87 @@ class AttendanceRunRow(Base):
     overtime_minutes: Mapped[int | None] = mapped_column(Integer)
     result_type: Mapped[str | None] = mapped_column(String(100))
     result_note: Mapped[str | None] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: 応答率エンジン関連
+# 注意: Operator はアプリ利用者(User)とは別物。OP/オペレーターを表す。
+# ---------------------------------------------------------------------------
+
+
+class Operator(TimestampMixin, Base):
+    __tablename__ = "operators"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    op_code: Mapped[str] = mapped_column(String(100), unique=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    skill_group: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(50), default="active")
+    shift_type: Mapped[str | None] = mapped_column(String(50))
+
+
+class ExcludeNumber(TimestampMixin, Base):
+    """テストコール等を応答率集計から除外する発信者番号マスタ。"""
+
+    __tablename__ = "exclude_numbers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    caller_number: Mapped[str] = mapped_column(String(50))
+    reason: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AbandonRule(TimestampMixin, Base):
+    """放棄呼の秒数閾値。skill_group が NULL の行は全体既定、指定行はスキルグループ別上書き。"""
+
+    __tablename__ = "abandon_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    skill_group: Mapped[str | None] = mapped_column(String(255))
+    threshold_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SkillGroupMerge(TimestampMixin, Base):
+    """合算定義。merge_label(親ラベル) ← child_skill_group(子グループ) を複数行で表現。"""
+
+    __tablename__ = "skill_group_merge"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    merge_label: Mapped[str] = mapped_column(String(255))
+    child_skill_group: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CallStat(TimestampMixin, Base):
+    """CDR取込の集計値。raw skill_group の値のみ保存する（合算結果は保存しない）。"""
+
+    __tablename__ = "call_stats"
+    __table_args__ = (
+        UniqueConstraint("stat_date", "time_slot", "skill_group", name="uq_call_stats_date_slot_group"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stat_date: Mapped[date] = mapped_column(Date)
+    time_slot: Mapped[int] = mapped_column(Integer)  # 着信時間の「時」(0-23)
+    skill_group: Mapped[str] = mapped_column(String(255))
+    completed_count: Mapped[int] = mapped_column(Integer, default=0)
+    valid_abandon_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ImportLog(Base):
+    """CDR取込監査。後から数字を再現できるよう、取込時点のルールスナップショットを保存する。"""
+
+    __tablename__ = "import_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    encoding: Mapped[str | None] = mapped_column(String(50))
+    row_count: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(50))  # completed / failed
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    engine_version: Mapped[str | None] = mapped_column(String(50))
+    threshold_rule_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
+    exclude_numbers_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    definition_note: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
