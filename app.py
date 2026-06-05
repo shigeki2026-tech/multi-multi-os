@@ -1,7 +1,5 @@
 import streamlit as st
 
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
 
 
 st.set_page_config(
@@ -10,6 +8,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_logged_in, render_sidebar
 
 ensure_app_ready()
 user = ensure_logged_in()

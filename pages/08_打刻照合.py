@@ -1,23 +1,6 @@
 import pandas as pd
 import streamlit as st
 
-from src.services.attendance_service import (
-    LABEL_ACTUAL,
-    LABEL_DATE,
-    LABEL_EARLY,
-    LABEL_EXPECTED,
-    LABEL_LATE,
-    LABEL_NAME,
-    LABEL_NOTE,
-    LABEL_OVERTIME,
-    LABEL_RESULT,
-    LABEL_SHIFT_RAW,
-    STATUS_MATCH,
-)
-from src.services.container import service_scope
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
-from src.utils.attendance_parser import to_csv_bytes, to_export_bytes
 
 
 DISPLAY_COLUMNS = [
@@ -38,6 +21,24 @@ DISPLAY_COLUMNS = [
 
 
 st.set_page_config(page_title="\u6253\u523b\u7167\u5408", layout="wide")
+
+from src.services.attendance_service import (
+    LABEL_ACTUAL,
+    LABEL_DATE,
+    LABEL_EARLY,
+    LABEL_EXPECTED,
+    LABEL_LATE,
+    LABEL_NAME,
+    LABEL_NOTE,
+    LABEL_OVERTIME,
+    LABEL_RESULT,
+    LABEL_SHIFT_RAW,
+    STATUS_MATCH,
+)
+from src.services.container import service_scope
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_logged_in, render_sidebar
+from src.utils.attendance_parser import to_csv_bytes, to_export_bytes
 ensure_app_ready()
 user = ensure_logged_in()
 render_sidebar(user)

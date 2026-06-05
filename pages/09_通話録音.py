@@ -16,8 +16,6 @@ except Exception as _audio_err:
     _AUDIO_AVAILABLE = False
     _AUDIO_ERROR = str(_audio_err)
 
-from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
 
 SAMPLE_RATE = 44100
 CALLER_DEVICE_ID = 2
@@ -65,6 +63,9 @@ def transcribe_file(model, audio_path: str, speaker: str) -> list[dict]:
 
 # ── Page bootstrap ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="通話録音", layout="wide")
+
+from src.ui.bootstrap import ensure_app_ready
+from src.ui.session import ensure_logged_in, render_sidebar
 ensure_app_ready()
 user = ensure_logged_in()
 render_sidebar(user)
