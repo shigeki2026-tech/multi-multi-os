@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="応答率速報", layout="wide")
@@ -145,6 +146,163 @@ with tab_cdr:
                 f"既に取込済みのキーが {len(prepared['collisions'])} 件あります。"
                 "二重取込になるため、このまま保存はできません（DBのユニーク制約で拒否されます）。"
             )
+
+        # 閾値比較プレビュー（参考値・DB非保存・全体のみ）
+        # 正式な秒数閾値を決める前に、同じCSVで 0/3/10/20/30秒の応答率を見比べる。
+        comparison = prepared.get("threshold_comparison")
+        if comparison:
+            st.subheader("閾値比較プレビュー（参考値・保存されません）")
+            st.caption(
+                "この比較は保存されません。正式値にする場合は、管理画面で abandon_rules を登録し、"
+                "既存集計を削除してから再取込してください。"
+            )
+            comp_view = [
+                {
+                    "閾値(秒)": r["threshold_seconds"],
+                    "完了呼": r["completed_count"],
+                    "有効放棄呼": r["valid_abandon_count"],
+                    "分母(完了+有効放棄)": r["denominator"],
+                    "応答率(%)": r["answer_rate"],
+                    "応答率差分(0秒比)": r["answer_rate_diff_from_0"],
+                    "有効放棄差分(0秒比)": r["valid_abandon_diff_from_0"],
+                }
+                for r in comparison
+            ]
+            st.dataframe(comp_view, use_container_width=True, hide_index=True)
+            # 比較表のCSVダウンロード（生の英語キーで出力。集計値そのものは変えない）。
+            comp_csv = pd.DataFrame(comparison).to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "閾値比較表をCSVダウンロード",
+                data=comp_csv,
+                file_name="threshold_comparison.csv",
+                mime="text/csv",
+                key="cdr_threshold_compare_dl",
+            )
+
+        # ===================================================================
+        # 選択式集計パネル（業務別・参考値・DB非保存）
+        # CSV内の skill_group を複数選び、秒数閾値を選ぶと、その回線群の応答率を大きく表示する。
+        # 計算は prepare で1度だけ作った中間集計（skill_group×threshold）を合算するだけで、
+        # 生CSVは再走査しない（大容量CSV対策）。UI層へORMは渡さない（list[dict]/数値のみ）。
+        # ===================================================================
+        sg_summary = prepared.get("skill_group_threshold_summary") or []
+        skill_groups_all = prepared.get("skill_groups") or sorted({r["skill_group"] for r in sg_summary})
+        if sg_summary:
+            st.subheader("選択式集計（業務別・参考値・保存されません）")
+            st.caption(
+                "回線（skill_group）を複数選び、秒数閾値を選ぶと、その回線群の応答率を集計します。"
+                "結果は保存されません。正式値にする場合は、管理画面で skill_group_merge（業務名→回線）と "
+                "abandon_rules（秒数閾値）を登録し、既存集計を削除してから同じCSVを再取込してください。"
+            )
+
+            with service_scope() as container:
+                merges_all = container.answer_rate_master_service.list_skill_group_merge()
+            existing_labels = sorted({m["merge_label"] for m in merges_all})
+
+            bc1, bc2 = st.columns(2)
+            label_choice = bc1.selectbox(
+                "業務名（既存の合算ラベルから選択）",
+                options=["（新規入力）"] + existing_labels,
+                key="sel_label_choice",
+            )
+            new_label = bc2.text_input("新規業務名（任意）", key="sel_new_label")
+            if label_choice != "（新規入力）":
+                business_name = label_choice
+            else:
+                business_name = new_label.strip()
+
+            # 既存ラベルを選んだ場合、その子回線をmultiselectの初期選択にする
+            default_children = [
+                m["child_skill_group"]
+                for m in merges_all
+                if m["merge_label"] == label_choice and m["child_skill_group"] in skill_groups_all
+            ]
+
+            selected_lines = st.multiselect(
+                f"回線（skill_group）を選択　全 {len(skill_groups_all)} 件（入力して検索できます）",
+                options=skill_groups_all,
+                default=default_children,
+                key="sel_lines",
+            )
+            sc1, sc2 = st.columns(2)
+            sc1.caption(f"選択回線数: {len(selected_lines)} 件")
+            threshold_sel = sc2.selectbox(
+                "秒数閾値",
+                options=list(ar.COMPARE_THRESHOLDS),
+                index=0,
+                format_func=lambda t: f"{t}秒",
+                key="sel_threshold",
+            )
+
+            if selected_lines:
+                sel = ar.summarize_selected_lines(sg_summary, selected_lines, threshold_sel)
+                title_suffix = f"（業務名: {business_name}）" if business_name else ""
+                st.markdown(f"#### 選択結果：{threshold_sel}秒 / 選択回線 {sel['selected_line_count']} 件{title_suffix}")
+                b1, b2, b3, b4 = st.columns(4)
+                b1.metric("応答率", f"{sel['answer_rate']:.1f}%")
+                b2.metric("完了呼", f"{sel['completed_count']:,}")
+                b3.metric("有効放棄呼", f"{sel['valid_abandon_count']:,}")
+                b4.metric("分母(完了+有効放棄)", f"{sel['denominator']:,}")
+
+                # 補助: 同じ選択回線群の 0/3/10/20/30秒比較
+                st.markdown("**選択回線群の閾値比較（0/3/10/20/30秒）**")
+                sel_cmp = ar.compare_selected_lines(sg_summary, selected_lines)
+                sel_cmp_view = [
+                    {
+                        "閾値(秒)": r["threshold_seconds"],
+                        "完了呼": r["completed_count"],
+                        "有効放棄呼": r["valid_abandon_count"],
+                        "分母(完了+有効放棄)": r["denominator"],
+                        "応答率(%)": r["answer_rate"],
+                        "応答率差分(0秒比)": r["answer_rate_diff_from_0"],
+                        "有効放棄差分(0秒比)": r["valid_abandon_diff_from_0"],
+                    }
+                    for r in sel_cmp
+                ]
+                st.dataframe(sel_cmp_view, use_container_width=True, hide_index=True)
+                sel_csv = pd.DataFrame(sel_cmp).to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "選択回線群の比較表をCSVダウンロード",
+                    data=sel_csv,
+                    file_name="selected_lines_threshold_comparison.csv",
+                    mime="text/csv",
+                    key="sel_compare_dl",
+                )
+
+                # グループ化導線: 選択回線群を skill_group_merge に登録（任意・既存テーブル利用）
+                st.markdown("**この回線群を合算ラベルとして登録（任意）**")
+                st.caption(
+                    "業務名＝merge_label、選択回線＝child_skill_group として skill_group_merge に登録します"
+                    "（既存と重複する組み合わせはスキップ）。応答率の正式値は、abandon_rules 登録後に再取込して算出してください。"
+                )
+                if not business_name:
+                    st.caption("登録するには業務名を入力／選択してください。")
+                if st.button(
+                    "この回線群を合算ラベルに登録する",
+                    disabled=not business_name,
+                    key="sel_save_merge",
+                ):
+                    existing_pairs = {(m["merge_label"], m["child_skill_group"]) for m in merges_all}
+                    try:
+                        added, skipped = 0, 0
+                        with service_scope() as container:
+                            for sg in selected_lines:
+                                if (business_name, sg) in existing_pairs:
+                                    skipped += 1
+                                    continue
+                                container.answer_rate_master_service.create_skill_group_merge(
+                                    user["user_id"], business_name, sg
+                                )
+                                added += 1
+                    except Exception as exc:  # 例外は握りつぶさず表示
+                        st.error(f"合算ラベルの登録に失敗しました: {exc}")
+                    else:
+                        st.success(
+                            f"合算ラベル『{business_name}』に {added} 件登録しました"
+                            f"（重複スキップ {skipped} 件）。集計の正式値は再取込で算出されます。"
+                        )
+            else:
+                st.info("回線（skill_group）を1件以上選択してください。")
 
         stats = prepared["stats"]
         with service_scope() as container:
