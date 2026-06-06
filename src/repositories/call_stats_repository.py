@@ -65,3 +65,24 @@ class CallStatsRepository:
     def list_import_logs(self, limit: int = 50) -> list[ImportLog]:
         stmt = select(ImportLog).order_by(ImportLog.imported_at.desc()).limit(limit)
         return list(self.session.scalars(stmt).all())
+
+    def latest_import_logs(self, limit: int = 50) -> list[dict]:
+        """import_log を「セッション内で属性を読み切った plain dict のリスト」で返す。
+
+        UI層へSQLAlchemy ORMオブジェクトを渡さない。ImportLogはrepository層でdict化する。
+        （ORMをUIに渡すとセッション終了後の属性アクセスで DetachedInstanceError になるため。）
+        """
+        logs = self.list_import_logs(limit=limit)
+        return [
+            {
+                "id": lg.id,
+                "filename": lg.filename,
+                "encoding": lg.encoding,
+                "row_count": lg.row_count,
+                "status": lg.status,
+                "engine_version": lg.engine_version,
+                "imported_at": str(lg.imported_at) if lg.imported_at is not None else "",
+                "error": lg.error_message or "",
+            }
+            for lg in logs
+        ]

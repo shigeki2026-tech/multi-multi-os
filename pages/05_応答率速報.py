@@ -173,10 +173,11 @@ with tab_cdr:
         # 二重取込は保存前に検出し、保存操作自体を無効化する。
         # （ボタンを disabled にするため、import_log に failed を残す必要はない。）
         if prepared["collisions"]:
+            # UI層へSQLAlchemy ORMオブジェクトを渡さない。ImportLogはrepository層でdict化する。
             with service_scope() as container:
                 existing_rows = container.call_stats_repository.count_stats()
-                last_logs = container.call_stats_repository.list_import_logs(limit=1)
-            log_label = f" / import_log #{last_logs[0].id}" if last_logs else ""
+                last_logs = container.call_stats_repository.latest_import_logs(limit=1)
+            log_label = f" / import_log #{last_logs[0]['id']}" if last_logs else ""
             st.warning(
                 "このCSVの集計結果は既に保存済みです。"
                 "同一期間・同一スキルグループの重複取込を防ぐため、保存できません。\n\n"
@@ -223,23 +224,8 @@ with tab_cdr:
         st.caption("報告文は決定論テンプレートで生成しています（外部AI未設定でも完結します）。")
 
     # 取込履歴（import_log）
+    # UI層へSQLAlchemy ORMオブジェクトを渡さない。ImportLogはrepository層でdict化する。
     with service_scope() as container:
-        logs = container.call_stats_repository.list_import_logs(limit=30)
+        logs = container.call_stats_repository.latest_import_logs(limit=30)
     st.subheader("取込履歴（import_log）")
-    st.dataframe(
-        [
-            {
-                "id": lg.id,
-                "filename": lg.filename,
-                "encoding": lg.encoding,
-                "row_count": lg.row_count,
-                "status": lg.status,
-                "engine_version": lg.engine_version,
-                "imported_at": lg.imported_at,
-                "error": lg.error_message or "",
-            }
-            for lg in logs
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.dataframe(logs, use_container_width=True, hide_index=True)

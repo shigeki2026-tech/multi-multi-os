@@ -67,6 +67,7 @@ class ServiceContainer:
             self.calendar_service,
             self.leoc_service,
             self.master_repository,
+            self.call_stats_repository,
         )
         self.admin_service = AdminService(self.admin_repository)
         self.attendance_service = AttendanceService(self.attendance_repository, self.audit_service)
