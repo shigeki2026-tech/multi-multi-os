@@ -122,13 +122,23 @@ with tab_cdr:
     if prepared:
         st.success(f"エンコード判定: {prepared['encoding']} / 読込行数: {prepared['row_count']:,}")
         s = prepared["summary"]
-        m1, m2, m3, m4 = st.columns(4)
+        # st.metric を狭い4列に詰めると集計グループ数（5桁）が「22,82」のように見切れるため、
+        # 主要3指標のみ metric にし、集計グループ数は3桁カンマ付きの通常テキストで全桁表示する。
+        m1, m2, m3 = st.columns(3)
         m1.metric("完了呼", f"{s['completed_total']:,}")
         m2.metric("有効放棄呼", f"{s['valid_abandon_total']:,}")
         m3.metric("全体応答率", f"{s['overall_answer_rate']:.1f}%")
-        m4.metric("集計グループ数", f"{s['stat_group_count']:,}")
+        st.markdown(f"**集計グループ数:** {s['stat_group_count']:,} グループ")
         with st.expander("前処理サマリ（検証件数）", expanded=False):
             st.json(s)
+
+        # 放棄呼の秒数閾値（abandon_rules）未登録時の強い警告。
+        # 全体既定0秒で集計できてしまうが、正式報告値に影響するため明示する（0秒保存自体は許可）。
+        if not abandon_rows:
+            st.warning(
+                "現在、放棄呼の秒数閾値が未登録のため、全体既定0秒で集計しています。"
+                "正式報告に使う場合は、管理画面で閾値ルールを登録してから再集計してください。"
+            )
 
         if prepared["collisions"]:
             st.warning(
@@ -159,6 +169,27 @@ with tab_cdr:
 
         st.subheader("保存")
         st.caption("保存すると raw skill_group の集計値のみ call_stats に保存します（合算値は保存しません）。")
+
+        # 二重取込は保存前に検出し、保存操作自体を無効化する。
+        # （ボタンを disabled にするため、import_log に failed を残す必要はない。）
+        if prepared["collisions"]:
+            with service_scope() as container:
+                existing_rows = container.call_stats_repository.count_stats()
+                last_logs = container.call_stats_repository.list_import_logs(limit=1)
+            log_label = f" / import_log #{last_logs[0].id}" if last_logs else ""
+            st.warning(
+                "このCSVの集計結果は既に保存済みです。"
+                "同一期間・同一スキルグループの重複取込を防ぐため、保存できません。\n\n"
+                f"既存 call_stats: {existing_rows:,}行{log_label}"
+            )
+
+        # 閾値未登録（0秒既定）の場合は保存ボタン直前にも注意を出す（0秒保存自体は許可）。
+        if not abandon_rows:
+            st.caption(
+                "⚠ 放棄呼の秒数閾値が未登録のため、全体既定0秒で集計した値を保存します。"
+                "正式報告に使う場合は、管理画面で閾値ルールを登録してから再集計してください。"
+            )
+
         if st.button("この内容で保存する", type="primary", disabled=bool(prepared["collisions"])):
             if uploaded is None:
                 st.error("ファイルが見つかりません。再度アップロードしてください。")
@@ -175,9 +206,20 @@ with tab_cdr:
                     st.success(f"保存しました。call_stats {res['inserted_stat_rows']:,} 行 / import_log #{res['import_log_id']}")
 
         st.subheader("報告文生成")
-        report_text = ar.build_report_text(stats, merges=active_merges, overall=s)
+        # スキルグループ別が大量に展開されると実務報告文として使いにくいため表示を切替える。
+        # 既定は「全体サマリのみ」。集計値そのものは変えず、並べ替え・件数制限のみ。
+        report_mode = st.radio(
+            "報告文の表示範囲",
+            options=list(ar.REPORT_MODES.keys()),
+            format_func=lambda k: ar.REPORT_MODES[k],
+            index=list(ar.REPORT_MODES.keys()).index(ar.DEFAULT_REPORT_MODE),
+            horizontal=True,
+            key="cdr_report_mode",
+        )
+        report_text = ar.build_report_text(stats, merges=active_merges, overall=s, mode=report_mode)
         st.code(report_text, language="text")
-        st.text_area("コピー用（報告文）", value=report_text, height=240, key="cdr_report_area")
+        # mode を key に含め、表示範囲を切替えたときにコピー用テキストも追従させる。
+        st.text_area("コピー用（報告文）", value=report_text, height=240, key=f"cdr_report_area_{report_mode}")
         st.caption("報告文は決定論テンプレートで生成しています（外部AI未設定でも完結します）。")
 
     # 取込履歴（import_log）
