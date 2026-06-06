@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from src.models.entities import CallStat, ImportLog
 
@@ -56,6 +56,32 @@ class CallStatsRepository:
     def count_stats(self) -> int:
         """call_stats の総行数。二重取込検出時に既存件数を画面表示するために使う。"""
         return int(self.session.scalar(select(func.count(CallStat.id))) or 0)
+
+    def stat_date_range(self) -> tuple[date | None, date | None]:
+        """保存済み call_stats の stat_date 最小・最大。削除UIの既定範囲に使う。"""
+        row = self.session.execute(
+            select(func.min(CallStat.stat_date), func.max(CallStat.stat_date))
+        ).one()
+        return row[0], row[1]
+
+    def count_stats_in_range(self, start: date, end: date) -> int:
+        """[start, end]（両端含む）の stat_date に該当する call_stats 行数。"""
+        stmt = select(func.count(CallStat.id)).where(
+            CallStat.stat_date >= start, CallStat.stat_date <= end
+        )
+        return int(self.session.scalar(stmt) or 0)
+
+    def delete_stats_in_range(self, start: date, end: date) -> int:
+        """[start, end]（両端含む）の call_stats を削除し、削除行数を返す。
+
+        削除対象は raw skill_group の集計値（call_stats）のみ。合算値は元々保存していない。
+        abandon_rules の閾値変更後に既存集計を消して同じCSVを再取込するために使う。
+        """
+        result = self.session.execute(
+            delete(CallStat).where(CallStat.stat_date >= start, CallStat.stat_date <= end)
+        )
+        self.session.flush()
+        return int(result.rowcount or 0)
 
     def create_import_log(self, log: ImportLog) -> ImportLog:
         self.session.add(log)

@@ -157,6 +157,40 @@ class CdrImportService:
         return {"inserted_stat_rows": inserted, "import_log_id": log.id}
 
     # ------------------------------------------------------------------
+    # 取込済み集計の削除（再取込用）
+    # ------------------------------------------------------------------
+    def delete_call_stats_range(self, start, end, actor_id: int, note: str | None = None) -> dict:
+        """[start, end]（両端含む）の call_stats を削除し、操作を import_log に残す。
+
+        用途: abandon_rules の秒数閾値を変更した後、既存の集計（0秒既定など）を削除し、
+        同じCSVを再取込できるようにする。
+        - 削除対象は raw skill_group の call_stats のみ（合算値は元々非保存のため対象外）。
+        - DBスキーマは変更しない。call_stats と import_log を結ぶFKは無いため、
+          削除は import_log 単位ではなく stat_date 範囲で行う（呼び出し側で範囲を指定する）。
+        - 操作監査として import_log に status="deleted" の行を1件残す（スキーマ変更不要）。
+        """
+        deleted = self.call_stats_repository.delete_stats_in_range(start, end)
+        log = ImportLog(
+            filename=f"[call_stats削除] {start}〜{end}",
+            encoding=None,
+            row_count=deleted,
+            status="deleted",
+            imported_at=datetime.utcnow(),
+            engine_version=ar.ENGINE_VERSION,
+            threshold_rule_snapshot_json=None,
+            exclude_numbers_snapshot_hash=None,
+            definition_note=(
+                note
+                or f"再取込のため call_stats {deleted}行を削除（{start}〜{end} / raw skill_groupのみ・合算値は非保存）。"
+            ),
+            error_message=None,
+        )
+        self.call_stats_repository.create_import_log(log)
+        if self.audit_service:
+            self.audit_service.log("import_log", log.id, "delete_call_stats", actor_id, after=log)
+        return {"deleted_rows": deleted, "import_log_id": log.id}
+
+    # ------------------------------------------------------------------
     # 失敗時の退避・記録
     # ------------------------------------------------------------------
     def _quarantine(self, raw: bytes, filename: str) -> str:
