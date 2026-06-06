@@ -79,21 +79,26 @@ def render_task_card(task: dict, actor_id: int):
     info_col, action_col = st.columns([4, 1], gap="medium")
 
     with info_col:
-        title_left, title_right = st.columns([8, 1], gap="small")
-        with title_left:
-            title_html = (
-                f"{project_chip(task['project_color'])}"
-                f"<span style='font-weight:700;font-size:1rem;color:#111827;'>{task['title']}</span>"
-            )
-            st.markdown(title_html, unsafe_allow_html=True)
-        with title_right:
-            if task["needs_confirmation"]:
-                st.markdown(
-                    "<div style='text-align:right;font-size:1rem;color:#DC2626;font-weight:700;'>&#9888; 要確認</div>",
-                    unsafe_allow_html=True,
-                )
-            elif is_editing:
-                st.caption("編集中")
+        # 要確認/編集中の表示はタイトル行に flexbox で右寄せする。
+        # （info_col 自体が columns 内のため、ここで st.columns を使うと
+        #  Streamlit の「columns は1階層までしかネストできない」制限に違反する。
+        #  内側 columns をやめ、1つの markdown に収めることでネストを解消する。）
+        if task["needs_confirmation"]:
+            right_html = "<span style='font-size:1rem;color:#DC2626;font-weight:700;white-space:nowrap;'>&#9888; 要確認</span>"
+        elif is_editing:
+            right_html = "<span style='font-size:0.82rem;color:#6B7280;white-space:nowrap;'>編集中</span>"
+        else:
+            right_html = ""
+        title_html = (
+            "<div style='display:flex;align-items:center;justify-content:space-between;gap:0.5rem;'>"
+            "<span style='min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>"
+            f"{project_chip(task['project_color'])}"
+            f"<span style='font-weight:700;font-size:1rem;color:#111827;'>{task['title']}</span>"
+            "</span>"
+            f"{right_html}"
+            "</div>"
+        )
+        st.markdown(title_html, unsafe_allow_html=True)
 
         st.markdown(
             " ".join(
@@ -157,6 +162,11 @@ render_sidebar(user)
 
 st.title("タスク")
 st.caption("一覧を見ながら編集しやすい運用向けUIです。")
+
+# 保存成功メッセージは st.rerun() を跨ぐため session_state 経由で一度だけ表示する。
+_flash = st.session_state.pop("task_flash", None)
+if _flash:
+    st.success(_flash)
 
 with service_scope() as container:
     user_options = container.master_service.user_options()
@@ -231,7 +241,15 @@ if panel_col:
                     task_type = r1[0].selectbox("種別", options=TASK_TYPES, format_func=lambda x: x[1])
                     priority = r1[1].selectbox("優先度", PRIORITIES)
                     status = r1[2].selectbox("状態", STATUSES, index=0)
-                    assignee = r1[3].selectbox("担当者", options=user_options, format_func=lambda x: x["label"])
+                    # 担当者は既定でログイン中ユーザーにする。
+                    # （一覧は既定で「自分のタスクのみ」(assignee==自分)で絞り込むため、
+                    #  他人を既定にすると作成直後のタスクが一覧に出ず「保存されない」ように見える。）
+                    assignee = r1[3].selectbox(
+                        "担当者",
+                        options=user_options,
+                        index=next((i for i, u in enumerate(user_options) if u["value"] == user["user_id"]), 0),
+                        format_func=lambda x: x["label"],
+                    )
 
                     r2 = st.columns(3)
                     team = r2[0].selectbox("チーム", options=team_options, format_func=lambda x: x["label"])
@@ -249,30 +267,36 @@ if panel_col:
                         st.rerun()
                     if save_create:
                         if not title.strip():
-                            st.warning("件名を入力してください。")
+                            # 件名が空なら保存しない。理由を必ず画面に表示する。
+                            st.warning("件名は必須です。")
                         else:
-                            with service_scope() as container:
-                                container.task_service.create_task(
-                                    actor_id=user["user_id"],
-                                    payload={
-                                        "task_type": task_type[0],
-                                        "title": title.strip(),
-                                        "description": description.strip(),
-                                        "requester_user_id": user["user_id"],
-                                        "assignee_user_id": assignee["value"],
-                                        "team_id": team["value"],
-                                        "project_id": project["value"],
-                                        "priority": priority,
-                                        "status": status,
-                                        "due_date": due_date,
-                                        "requested_date": None,
-                                        "related_link": related_link.strip(),
-                                        "needs_confirmation": needs_confirmation,
-                                    },
-                                )
-                            st.session_state["show_task_create"] = False
-                            st.success("タスクを登録しました。")
-                            st.rerun()
+                            try:
+                                with service_scope() as container:
+                                    container.task_service.create_task(
+                                        actor_id=user["user_id"],
+                                        payload={
+                                            "task_type": task_type[0],
+                                            "title": title.strip(),
+                                            "description": description.strip(),
+                                            "requester_user_id": user["user_id"],
+                                            "assignee_user_id": assignee["value"],
+                                            "team_id": team["value"],
+                                            "project_id": project["value"],
+                                            "priority": priority,
+                                            "status": status,
+                                            "due_date": due_date,
+                                            "requested_date": None,
+                                            "related_link": related_link.strip(),
+                                            "needs_confirmation": needs_confirmation,
+                                        },
+                                    )
+                            except Exception as exc:  # 例外は握りつぶさず理由を表示する
+                                st.error(f"タスクの保存に失敗しました: {exc}")
+                            else:
+                                # 成功フラグは rerun を跨いで表示するため session_state に退避する。
+                                st.session_state["show_task_create"] = False
+                                st.session_state["task_flash"] = "タスクを作成しました。"
+                                st.rerun()
 
         elif editing_task_id:
             with service_scope() as container:
