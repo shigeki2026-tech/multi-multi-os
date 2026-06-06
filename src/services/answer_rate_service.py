@@ -254,8 +254,37 @@ def by_merge_label(stats: list[dict], merges) -> list[dict]:
     return sorted(rows, key=lambda r: r["merge_label"])
 
 
-def build_report_text(stats: list[dict], merges=None, overall: dict | None = None) -> str:
+# 報告文の表示モード。集計ロジックは変えず、並べ替え・件数制限のみで実務向けに整える。
+REPORT_MODES = {
+    "overall": "全体サマリのみ",
+    "low_rate_20": "応答率低い順20件",
+    "high_count_20": "件数多い順20件",
+    "all": "全件表示",
+}
+DEFAULT_REPORT_MODE = "overall"
+
+# 長いスキルグループ名（弁護士ドットコム系など）は報告文・PDFで崩れるため先頭で省略する。
+SKILL_GROUP_NAME_MAX = 80
+
+
+def _truncate_name(name: str, limit: int = SKILL_GROUP_NAME_MAX) -> str:
+    name = str(name)
+    return name if len(name) <= limit else name[:limit] + "..."
+
+
+def build_report_text(
+    stats: list[dict],
+    merges=None,
+    overall: dict | None = None,
+    mode: str = DEFAULT_REPORT_MODE,
+) -> str:
     """決定論的なテンプレート報告文。外部AI未設定でも応答率管理は完結する。
+
+    mode（表示切替。集計値そのものは変えず、並べ替えと件数制限だけを行う）:
+        "overall"       … 全体サマリのみ（既定。スキルグループ別は出さない）
+        "low_rate_20"   … 応答率が低い順に20件
+        "high_count_20" … 件数（完了+有効放棄）が多い順に20件
+        "all"           … 全件
 
     AI生成は設定済みの場合のみ任意補助として別途差し込む想定（本関数はAI不使用）。
     """
@@ -265,11 +294,29 @@ def build_report_text(stats: list[dict], merges=None, overall: dict | None = Non
             f"全体 応答率 {overall['overall_answer_rate']:.1f}%"
             f"（完了{overall['completed_total']} / 有効放棄{overall['valid_abandon_total']}）"
         )
-    lines.append("")
-    lines.append("【スキルグループ別】")
-    for row in by_skill_group(stats):
-        denom = row["completed_count"] + row["valid_abandon_count"]
-        lines.append(f"{row['skill_group']}：{row['completed_count']}/{denom} {row['answer_rate']:.1f}%")
+
+    if mode != "overall":
+        rows = by_skill_group(stats)
+        if mode == "low_rate_20":
+            rows = sorted(rows, key=lambda r: r["answer_rate"])[:20]
+            heading = "【スキルグループ別 応答率低い順20件】"
+        elif mode == "high_count_20":
+            rows = sorted(
+                rows,
+                key=lambda r: r["completed_count"] + r["valid_abandon_count"],
+                reverse=True,
+            )[:20]
+            heading = "【スキルグループ別 件数多い順20件】"
+        else:  # "all"
+            heading = "【スキルグループ別 全件】"
+
+        lines.append("")
+        lines.append(heading)
+        for row in rows:
+            denom = row["completed_count"] + row["valid_abandon_count"]
+            name = _truncate_name(row["skill_group"])
+            lines.append(f"{name}：{row['completed_count']}/{denom} {row['answer_rate']:.1f}%")
+
     if merges:
         merged = by_merge_label(stats, merges)
         if merged:
@@ -277,5 +324,6 @@ def build_report_text(stats: list[dict], merges=None, overall: dict | None = Non
             lines.append("【合算ラベル別】")
             for row in merged:
                 denom = row["completed_count"] + row["valid_abandon_count"]
-                lines.append(f"{row['merge_label']}：{row['completed_count']}/{denom} {row['answer_rate']:.1f}%")
+                name = _truncate_name(row["merge_label"])
+                lines.append(f"{name}：{row['completed_count']}/{denom} {row['answer_rate']:.1f}%")
     return "\n".join(lines)

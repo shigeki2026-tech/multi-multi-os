@@ -53,6 +53,10 @@ class CallStatsRepository:
     def latest_stat_date(self):
         return self.session.scalar(select(func.max(CallStat.stat_date)))
 
+    def count_stats(self) -> int:
+        """call_stats の総行数。二重取込検出時に既存件数を画面表示するために使う。"""
+        return int(self.session.scalar(select(func.count(CallStat.id))) or 0)
+
     def create_import_log(self, log: ImportLog) -> ImportLog:
         self.session.add(log)
         self.session.flush()
