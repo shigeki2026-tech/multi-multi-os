@@ -229,3 +229,61 @@ with tab_cdr:
         logs = container.call_stats_repository.latest_import_logs(limit=30)
     st.subheader("取込履歴（import_log）")
     st.dataframe(logs, use_container_width=True, hide_index=True)
+
+    # -----------------------------------------------------------------------
+    # 取込済み集計の削除（再取込用）
+    # abandon_rules の秒数閾値を変更した後、既存の0秒集計を削除して同じCSVを再取込する。
+    # call_stats と import_log を結ぶFK列は無い（DBスキーマ変更しない方針）ため、
+    # 削除は import_log 単位ではなく stat_date 範囲で行う。1CSV=1期間のため実用上これで足りる。
+    # 削除対象は raw skill_group の call_stats のみ（合算値は元々非保存）。
+    # -----------------------------------------------------------------------
+    st.subheader("取込済み集計の削除（再取込用）")
+    st.caption(
+        "abandon_rules の秒数閾値を変更した後、既存の集計（0秒既定など）を削除して同じCSVを再取込するための機能です。"
+        "削除対象は raw skill_group の call_stats のみで、合算値は保存していないため対象外です。削除は取り消せません。"
+    )
+    with service_scope() as container:
+        del_min, del_max = container.call_stats_repository.stat_date_range()
+
+    if del_min is None:
+        st.info("削除できる call_stats がありません（まだ取込がありません）。")
+    else:
+        with st.expander("取込履歴を参照（削除する期間の特定用）", expanded=False):
+            st.dataframe(logs, use_container_width=True, hide_index=True)
+        dc1, dc2 = st.columns(2)
+        del_start = dc1.date_input(
+            "削除開始日（stat_date）", value=del_min, min_value=del_min, max_value=del_max, key="cdr_del_start"
+        )
+        del_end = dc2.date_input(
+            "削除終了日（stat_date）", value=del_max, min_value=del_min, max_value=del_max, key="cdr_del_end"
+        )
+        if del_start > del_end:
+            st.warning("削除開始日は終了日以前にしてください。")
+        else:
+            with service_scope() as container:
+                del_count = container.call_stats_repository.count_stats_in_range(del_start, del_end)
+            st.markdown(f"**削除対象 call_stats: {del_count:,} 行**（{del_start} 〜 {del_end}）")
+            # 削除前の確認チェックを必須にする（チェックが無いと削除ボタンを押せない）。
+            del_confirm = st.checkbox(
+                "上記の call_stats を削除することを確認しました（取り消せません）", key="cdr_del_confirm"
+            )
+            if st.button(
+                "call_stats を削除する", type="secondary", disabled=(del_count == 0 or not del_confirm)
+            ):
+                try:
+                    with service_scope() as container:
+                        del_res = container.cdr_import_service.delete_call_stats_range(
+                            del_start, del_end, actor_id=user["user_id"]
+                        )
+                except Exception as exc:  # 例外は握りつぶさず理由を表示する
+                    st.error(f"削除に失敗しました: {exc}")
+                else:
+                    # 古いプレビュー結果（衝突情報）は無効化し、再プレビューから取込し直させる。
+                    st.session_state.pop("cdr_prepared", None)
+                    st.session_state["cdr_saved"] = None
+                    st.success(
+                        f"call_stats {del_res['deleted_rows']:,} 行を削除しました"
+                        f"（import_log #{del_res['import_log_id']} に記録）。"
+                        "同じCSVを『集計プレビュー』からやり直して再取込できます。"
+                    )
+                    st.rerun()
