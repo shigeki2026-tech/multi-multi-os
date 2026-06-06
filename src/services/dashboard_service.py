@@ -1,13 +1,44 @@
 from datetime import date
 
+from src.services import answer_rate_service as ar
+
 
 class DashboardService:
-    def __init__(self, task_repository, request_repository, calendar_service, leoc_service, master_repository):
+    def __init__(self, task_repository, request_repository, calendar_service, leoc_service, master_repository,
+                 call_stats_repository=None):
         self.task_repository = task_repository
         self.request_repository = request_repository
         self.calendar_service = calendar_service
         self.leoc_service = leoc_service
         self.master_repository = master_repository
+        self.call_stats_repository = call_stats_repository
+
+    def get_answer_rate_dashboard_summary(self) -> dict:
+        """ホーム画面の応答率サマリを「セッション内で集計済みの plain dict」として返す。
+
+        ORM行（CallStat / ImportLog）の属性アクセスはすべてこのメソッド内（DBセッションが
+        開いている間）で完了させる。UI層（app.py）へはORMを渡さず数値・文字列のみ返すことで
+        DetachedInstanceError を防ぐ。応答率の計算定義は ar.answer_rate を変更せず利用する。
+        """
+        latest_date = self.call_stats_repository.latest_stat_date()
+        rows = self.call_stats_repository.list_stats(latest_date, latest_date) if latest_date else []
+        completed = sum(r.completed_count for r in rows)
+        valid_abandon = sum(r.valid_abandon_count for r in rows)
+
+        logs = self.call_stats_repository.list_import_logs(limit=1)
+        log = logs[0] if logs else None
+        return {
+            "latest_date": str(latest_date) if latest_date else None,
+            "completed_count": completed,
+            "valid_abandon_count": valid_abandon,
+            "answer_rate": ar.answer_rate(completed, valid_abandon) if rows else None,
+            "group_count": len(rows),
+            "has_data": bool(rows),
+            "latest_import_id": log.id if log else None,
+            "latest_import_filename": log.filename if log else None,
+            "latest_import_status": log.status if log else None,
+            "latest_import_at": str(log.imported_at) if log else None,
+        }
 
     def get_dashboard_data(self, user_id: int):
         today_due = self.task_repository.list_today_due_tasks(user_id)

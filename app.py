@@ -9,7 +9,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-from src.services import answer_rate_service as ar
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
 from src.ui.session import ensure_logged_in, render_sidebar
@@ -22,24 +21,25 @@ st.title("ホーム")
 st.caption("応答率を中心としたサマリです。今日やること・予定の詳細はダッシュボードを参照してください。")
 
 # --- 応答率サマリ（実データ） ---
+# ORM行はサービス層（DBセッション内）で集計済みdictに変換して受け取る。
+# app.py では ORM 属性を一切読まない（DetachedInstanceError 防止）。
 with service_scope() as container:
-    latest_date = container.call_stats_repository.latest_stat_date()
-    cdr_rows = container.call_stats_repository.list_stats(latest_date, latest_date) if latest_date else []
-    last_logs = container.call_stats_repository.list_import_logs(limit=1)
+    cdr = container.dashboard_service.get_answer_rate_dashboard_summary()
     manual_latest = container.leoc_service.latest_for_dashboard()
-
-cdr_completed = sum(r.completed_count for r in cdr_rows)
-cdr_valid_abandon = sum(r.valid_abandon_count for r in cdr_rows)
-cdr_rate = ar.answer_rate(cdr_completed, cdr_valid_abandon) if cdr_rows else None
 
 st.subheader("応答率（CDR取込・自動集計）")
 m1, m2, m3 = st.columns(3)
-m1.metric("対象日", str(latest_date) if latest_date else "-")
-m2.metric("応答率", f"{cdr_rate:.1f}%" if cdr_rate is not None else "-")
-m3.metric("完了 / 有効放棄", f"{cdr_completed:,} / {cdr_valid_abandon:,}" if cdr_rows else "-")
-if last_logs:
-    lg = last_logs[0]
-    st.caption(f"最終取込: {lg.filename}（{lg.status} / {lg.imported_at}）")
+m1.metric("対象日", cdr["latest_date"] or "-")
+m2.metric("応答率", f"{cdr['answer_rate']:.1f}%" if cdr["answer_rate"] is not None else "-")
+m3.metric(
+    "完了 / 有効放棄",
+    f"{cdr['completed_count']:,} / {cdr['valid_abandon_count']:,}" if cdr["has_data"] else "-",
+)
+if cdr["latest_import_id"] is not None:
+    st.caption(
+        f"最終取込: {cdr['latest_import_filename']}"
+        f"（{cdr['latest_import_status']} / {cdr['latest_import_at']}）"
+    )
 else:
     st.caption("まだCDR取込はありません。『応答率速報 → CDR取込』タブから取り込めます。")
 
