@@ -191,6 +191,183 @@ def aggregate(df: pd.DataFrame, mapping: dict, threshold_rules: dict, exclude_se
 
 
 # ---------------------------------------------------------------------------
+# 閾値比較（正式閾値決定前の参考値。保存しない・純粋関数）
+# ---------------------------------------------------------------------------
+
+# 比較する放棄呼の秒数閾値（既定）。
+COMPARE_THRESHOLDS = (0, 3, 10, 20, 30)
+
+
+def compare_thresholds(df: pd.DataFrame, mapping: dict, exclude_set: set,
+                       thresholds=COMPARE_THRESHOLDS) -> list[dict]:
+    """同一CSVで複数の秒数閾値の「全体」応答率を比較する純粋関数（DB非保存）。
+
+    前処理は aggregate と同一定義（閾値だけを差し替える。集計定義は変えない）:
+        1. 発信呼=1 を全除外（着信のみ対象）
+        2. exclude_numbers 除外
+        3. 着信時間が解釈できない行は集計軸が定まらないため除外
+        4. 呼損候補は 放棄呼=1 のみ
+        5. 経過秒(着信→切断) <= 閾値 の放棄呼は有効放棄呼に数えない（= 経過秒 > 閾値 のみ有効）
+
+    完了呼数は閾値に依存しない（閾値で動くのは有効放棄呼のみ）。
+    スキルグループ別は出さず、全体のみを返す（list[dict]・ORM非使用）。
+    各行に 0秒基準との差分（answer_rate_diff_from_0 / valid_abandon_diff_from_0）を付与する。
+    """
+    m = mapping
+    work = pd.DataFrame(
+        {
+            "caller_number": df[m["caller_number"]].astype(str).str.strip(),
+            "completed": pd.to_numeric(df[m["completed"]], errors="coerce").fillna(0).astype(int),
+            "abandoned": pd.to_numeric(df[m["abandoned"]], errors="coerce").fillna(0).astype(int),
+            "outbound": pd.to_numeric(df[m["outbound"]], errors="coerce").fillna(0).astype(int),
+            "inbound_time": pd.to_datetime(df[m["inbound_time"]], errors="coerce"),
+            "disconnect_time": pd.to_datetime(df[m["disconnect_time"]], errors="coerce"),
+        }
+    )
+
+    # 1. 発信呼=1 除外
+    work = work[work["outbound"] != 1]
+    # 2. exclude_numbers 除外
+    if exclude_set:
+        work = work[~work["caller_number"].isin(exclude_set)]
+    # 3. 着信時間が解釈できない行を除外（aggregate と同じ）
+    work = work[work["inbound_time"].notna()].copy()
+    # 経過秒 = 切断時間 - 着信時間（呼出秒数の近似。ELAPSED_APPROX_NOTE 参照）
+    work["elapsed_sec"] = (work["disconnect_time"] - work["inbound_time"]).dt.total_seconds()
+
+    completed_total = int((work["completed"] == 1).sum())  # 閾値に依存しない
+    abandon_mask = work["abandoned"] == 1
+
+    raw_rows = []
+    for t in thresholds:
+        # 5. 経過秒 > 閾値 の放棄呼のみ有効放棄呼
+        valid_abandon = int((abandon_mask & (work["elapsed_sec"] > t)).sum())
+        denom = completed_total + valid_abandon
+        raw_rows.append(
+            {
+                "threshold_seconds": int(t),
+                "completed_count": completed_total,
+                "valid_abandon_count": valid_abandon,
+                "denominator": denom,
+                "answer_rate": answer_rate(completed_total, valid_abandon),
+            }
+        )
+
+    # 0秒基準（無ければ先頭）との差分を付与
+    baseline = next((r for r in raw_rows if r["threshold_seconds"] == 0), raw_rows[0] if raw_rows else None)
+    for r in raw_rows:
+        if baseline is None:
+            r["answer_rate_diff_from_0"] = 0.0
+            r["valid_abandon_diff_from_0"] = 0
+        else:
+            r["answer_rate_diff_from_0"] = round(r["answer_rate"] - baseline["answer_rate"], 1)
+            r["valid_abandon_diff_from_0"] = r["valid_abandon_count"] - baseline["valid_abandon_count"]
+    return raw_rows
+
+
+def build_threshold_summary_by_skill_group(df: pd.DataFrame, mapping: dict, exclude_set: set,
+                                           thresholds=COMPARE_THRESHOLDS) -> list[dict]:
+    """skill_group × threshold_seconds の軽量中間集計を1度だけ構築する純粋関数（DB非保存）。
+
+    大容量CSV対策の中核。生CSVを何度も再走査せず、この中間集計を合算して
+    UI の回線選択・閾値選択結果を即時計算する（生CSVの再計算をしない）。
+
+    前処理は aggregate / compare_thresholds と同一定義（閾値だけ差し替える）。
+    完了呼は閾値に依存しないため skill_group 単位で1度だけ数え、放棄呼のみ閾値ごとに数える。
+
+    戻り値は list[dict]（ORM非使用）:
+        {skill_group, threshold_seconds, completed_count, valid_abandon_count, denominator, answer_rate}
+
+    NOTE（さらなる大容量化に備えた選択肢・今回はpandasベース）:
+        - 250MB級でメモリが厳しい場合は pandas の chunksize 読込でこの中間集計だけを
+          逐次積み上げる（完了数と「閾値ごとの経過秒>閾値の放棄数」をskill_group別に加算）方式に置換可能。
+        - さらに高速・低メモリが必要なら DuckDB / Polars で同じ集計を行うことも検討余地あり。
+          いずれも既存の集計定義（応答率の分子分母）は変更しないこと。
+    """
+    m = mapping
+    work = pd.DataFrame(
+        {
+            "skill_group": df[m["skill_group"]].astype(str),
+            "caller_number": df[m["caller_number"]].astype(str).str.strip(),
+            "completed": pd.to_numeric(df[m["completed"]], errors="coerce").fillna(0).astype(int),
+            "abandoned": pd.to_numeric(df[m["abandoned"]], errors="coerce").fillna(0).astype(int),
+            "outbound": pd.to_numeric(df[m["outbound"]], errors="coerce").fillna(0).astype(int),
+            "inbound_time": pd.to_datetime(df[m["inbound_time"]], errors="coerce"),
+            "disconnect_time": pd.to_datetime(df[m["disconnect_time"]], errors="coerce"),
+        }
+    )
+    work = work[work["outbound"] != 1]
+    if exclude_set:
+        work = work[~work["caller_number"].isin(exclude_set)]
+    work = work[work["inbound_time"].notna()].copy()
+    work["elapsed_sec"] = (work["disconnect_time"] - work["inbound_time"]).dt.total_seconds()
+
+    completed_by_sg = work.loc[work["completed"] == 1].groupby("skill_group").size()
+    abandon = work.loc[work["abandoned"] == 1, ["skill_group", "elapsed_sec"]]
+
+    all_sg = sorted(set(completed_by_sg.index).union(set(abandon["skill_group"].unique())))
+    rows = []
+    for t in thresholds:
+        ab_t = abandon.loc[abandon["elapsed_sec"] > t].groupby("skill_group").size()
+        for sg in all_sg:
+            completed = int(completed_by_sg.get(sg, 0))
+            valid_abandon = int(ab_t.get(sg, 0))
+            denom = completed + valid_abandon
+            if denom == 0:
+                continue  # 完了も有効放棄も無い回線は応答率の意味を持たない
+            rows.append(
+                {
+                    "skill_group": sg,
+                    "threshold_seconds": int(t),
+                    "completed_count": completed,
+                    "valid_abandon_count": valid_abandon,
+                    "denominator": denom,
+                    "answer_rate": answer_rate(completed, valid_abandon),
+                }
+            )
+    return rows
+
+
+def summarize_selected_lines(summary_rows: list[dict], skill_groups, threshold_seconds: int) -> dict:
+    """中間集計（build_threshold_summary_by_skill_group の結果）から、選択回線群×指定閾値の
+    全体応答率を合算して返す純粋関数（DB非保存・生CSV非走査）。"""
+    selected = {str(x) for x in skill_groups}
+    t = int(threshold_seconds)
+    completed = 0
+    valid_abandon = 0
+    for r in summary_rows:
+        if r["threshold_seconds"] == t and r["skill_group"] in selected:
+            completed += r["completed_count"]
+            valid_abandon += r["valid_abandon_count"]
+    denom = completed + valid_abandon
+    return {
+        "threshold_seconds": t,
+        "selected_line_count": len(selected),
+        "completed_count": completed,
+        "valid_abandon_count": valid_abandon,
+        "denominator": denom,
+        "answer_rate": answer_rate(completed, valid_abandon),
+    }
+
+
+def compare_selected_lines(summary_rows: list[dict], skill_groups, thresholds=COMPARE_THRESHOLDS) -> list[dict]:
+    """選択回線群について 0/3/10/20/30秒の比較表を中間集計から作る（0秒基準の差分付き）。
+
+    skill_groups に全回線を渡せば全体比較になる（compare_thresholds の中間集計版に相当）。
+    """
+    rows = [summarize_selected_lines(summary_rows, skill_groups, t) for t in thresholds]
+    baseline = next((r for r in rows if r["threshold_seconds"] == 0), rows[0] if rows else None)
+    for r in rows:
+        if baseline is None:
+            r["answer_rate_diff_from_0"] = 0.0
+            r["valid_abandon_diff_from_0"] = 0
+        else:
+            r["answer_rate_diff_from_0"] = round(r["answer_rate"] - baseline["answer_rate"], 1)
+            r["valid_abandon_diff_from_0"] = r["valid_abandon_count"] - baseline["valid_abandon_count"]
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # 表示・報告用の都度計算（保存しない）
 # ---------------------------------------------------------------------------
 

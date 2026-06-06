@@ -105,6 +105,14 @@ class CdrImportService:
         keys = [(s["stat_date"], s["time_slot"], s["skill_group"]) for s in stats]
         collisions = self.call_stats_repository.exists_for_keys(keys)
 
+        # 中間集計（skill_group × threshold_seconds）を1度だけ構築する（大容量CSV対策）。
+        # 以降のUI選択（回線複数選択・閾値選択）はこの中間集計を合算して計算し、生CSVを再走査しない。
+        # 保存済みデータの有無に関係なくプレビューで提示する（参考値・DB非保存）。
+        sg_threshold_summary = ar.build_threshold_summary_by_skill_group(df, mapping, snapshots["exclude_set"])
+        all_skill_groups = sorted({r["skill_group"] for r in sg_threshold_summary})
+        # 全体比較は中間集計の全回線合算として導出（compare_thresholds の df 再走査を避ける）。
+        threshold_comparison = ar.compare_selected_lines(sg_threshold_summary, all_skill_groups)
+
         return {
             "filename": filename,
             "encoding": encoding,
@@ -112,6 +120,9 @@ class CdrImportService:
             "stats": stats,
             "summary": result["summary"],
             "collisions": collisions,
+            "threshold_comparison": threshold_comparison,
+            "skill_group_threshold_summary": sg_threshold_summary,
+            "skill_groups": all_skill_groups,
             "threshold_rule_snapshot_json": snapshots["threshold_rules"],
             "exclude_numbers_snapshot_hash": snapshots["exclude_hash"],
             "definition_note": ar.ELAPSED_APPROX_NOTE,
