@@ -92,6 +92,34 @@ class AnswerRateMasterService:
         self._audit("skill_group_merge", obj.id, "create", actor_id, after=obj)
         return obj
 
+    def create_skill_group_merge_bulk(self, actor_id: int, merge_label: str, child_skill_groups) -> dict:
+        """1つの業務グループ(merge_label)へ複数の子スキルグループを一括登録する。
+
+        既存と重複する (merge_label, child) はスキップする。
+        戻り値は {added, skipped, label}（UI層へORMは渡さない）。
+        """
+        label = (merge_label or "").strip()
+        if not label:
+            raise ValueError("業務グループ名（親ラベル）を入力してください。")
+        children = sorted({str(c).strip() for c in child_skill_groups if str(c).strip()})
+        if not children:
+            raise ValueError("子スキルグループを1件以上選択してください。")
+
+        existing_pairs = {
+            (m.merge_label, m.child_skill_group)
+            for m in self.repo.list_skill_group_merge(active_only=False)
+        }
+        added, skipped = 0, 0
+        for child in children:
+            if (label, child) in existing_pairs:
+                skipped += 1
+                continue
+            obj = SkillGroupMerge(merge_label=label, child_skill_group=child, is_active=True)
+            self.repo.add(obj)
+            self._audit("skill_group_merge", obj.id, "create", actor_id, after=obj)
+            added += 1
+        return {"added": added, "skipped": skipped, "label": label}
+
     def toggle_skill_group_merge(self, actor_id: int, id_: int):
         obj = self.repo.get_skill_group_merge(id_)
         if obj:

@@ -475,7 +475,8 @@ with tab_cdr:
 with tab_view:
     st.caption(
         "取込済みの集計データから応答率を閲覧します（CSVの再アップロードは不要）。"
-        "期間・業務名・回線（skill_group）・秒数閾値を選ぶと、保存済みの中間集計を合算して計算します。"
+        "対象期間と業務グループ（skill_group_merge）・秒数閾値を選ぶと、配下の回線をまとめて集計します。"
+        "回線を個別に指定したい場合は『詳細設定』を開いてください。"
     )
 
     with service_scope() as container:
@@ -499,7 +500,7 @@ with tab_view:
         if view_start > view_end:
             st.warning("対象期間の開始日は終了日以前にしてください。")
         else:
-            # 期間内に存在する回線と、業務名（合算ラベル）を取得
+            # 期間内に存在する回線と、業務グループ（合算ラベル）を取得
             with service_scope() as container:
                 available_lines = container.answer_rate_threshold_repository.list_skill_groups(
                     view_start, view_end
@@ -508,29 +509,76 @@ with tab_view:
             active_merges = [m for m in merges_all if m["is_active"]]
             merge_labels = sorted({m["merge_label"] for m in active_merges})
 
-            # 2. 業務名（合算ラベル）。選ぶと配下の skill_group を回線選択の初期値にする。
-            label_choice = st.selectbox(
-                "業務名（合算ラベル skill_group_merge から選択。配下の回線が下の選択に入ります）",
-                options=["（指定なし）"] + merge_labels,
-                key="view_label_choice",
-            )
-            default_lines = [
-                m["child_skill_group"]
-                for m in active_merges
-                if m["merge_label"] == label_choice and m["child_skill_group"] in available_lines
-            ]
-            if label_choice != "（指定なし）" and not default_lines:
-                st.caption(
-                    f"※ 業務名『{label_choice}』配下の回線は、対象期間の集計データに含まれていません。"
+            # 長いskill_group名（弁護士ドットコム系など）は一覧で崩れるため省略表示する。
+            def _short_sg(name: str, limit: int = 46) -> str:
+                name = str(name)
+                return name if len(name) <= limit else name[:limit] + "…"
+
+            # 業務グループ配下のうち、対象期間の集計データに実在する回線だけを対象にする。
+            def _lines_of_group(label: str) -> list[str]:
+                avail = set(available_lines)
+                return sorted(
+                    {
+                        m["child_skill_group"]
+                        for m in active_merges
+                        if m["merge_label"] == label and m["child_skill_group"] in avail
+                    }
                 )
 
-            # 3/4. 回線（skill_group）の複数選択（業務名の配下を初期値、直接選択も可）
-            selected_lines = st.multiselect(
-                f"回線（skill_group）を選択　全 {len(available_lines)} 件（入力して検索できます）",
-                options=available_lines,
-                default=default_lines,
-                key="view_lines",
-            )
+            group_label = None  # 大表示の見出しに使う業務グループ名（直接選択時は None）
+
+            if not merge_labels:
+                # 4/8. 業務グループ未登録: 登録を案内しつつ、直接選択で閲覧できるようにする。
+                st.info(
+                    "管理画面で skill_group_merge に業務グループを登録すると、回線を毎回選ばずに閲覧できます。"
+                )
+                selected_lines = st.multiselect(
+                    f"回線（skill_group）を直接選択　全 {len(available_lines)} 件（入力して検索できます）",
+                    options=available_lines,
+                    default=[],
+                    key="view_lines_direct",
+                )
+            else:
+                # 1/2. 業務グループを主役に選ばせ、配下の回線を自動で対象にする。
+                group_label = st.selectbox(
+                    "業務グループ（skill_group_merge の親ラベル）",
+                    options=merge_labels,
+                    index=0,
+                    key="view_group",
+                )
+                group_lines = _lines_of_group(group_label)
+
+                # 3. 対象回線一覧（件数＋省略表示。expander内に格納）
+                if not group_lines:
+                    all_children = sorted(
+                        {m["child_skill_group"] for m in active_merges if m["merge_label"] == group_label}
+                    )
+                    st.warning(
+                        f"業務グループ『{group_label}』配下の回線（{len(all_children)} 件）は、"
+                        "対象期間の集計データに含まれていません。対象期間を見直してください。"
+                    )
+                else:
+                    st.caption(f"対象回線: {len(group_lines)} 件（業務グループ『{group_label}』配下）")
+                    with st.expander(f"対象回線一覧（{len(group_lines)} 件）を表示", expanded=False):
+                        st.dataframe(
+                            [{"回線(skill_group)": _short_sg(sg)} for sg in group_lines],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                # 4. 回線を直接選ぶ multiselect は「詳細設定」expander の中（初期は非表示）。
+                #    既定は業務グループ配下。groupごとにkeyを分け、グループ切替で初期値が追従するようにする。
+                with st.expander("詳細設定（回線を直接選ぶ／業務グループの選択を上書き）", expanded=False):
+                    st.caption(
+                        "通常は業務グループの配下回線をそのまま使います。"
+                        "ここで回線を直接調整すると、その内容で集計します（業務グループの選択を上書き）。"
+                    )
+                    selected_lines = st.multiselect(
+                        f"回線（skill_group）　全 {len(available_lines)} 件（入力して検索できます）",
+                        options=available_lines,
+                        default=group_lines,
+                        key=f"view_lines_{group_label}",
+                    )
 
             # 5. 秒数閾値
             threshold_sel = st.selectbox(
@@ -542,7 +590,13 @@ with tab_view:
             )
 
             if not selected_lines:
-                st.info("回線（skill_group）を1件以上選択してください（業務名を選ぶと自動で入ります）。")
+                if merge_labels:
+                    st.info(
+                        "対象回線がありません。業務グループを選び直すか、"
+                        "『詳細設定』で回線を直接選択してください。"
+                    )
+                else:
+                    st.info("回線（skill_group）を1件以上選択してください。")
             else:
                 with service_scope() as container:
                     agg = container.answer_rate_threshold_repository.aggregate_selected(
@@ -556,10 +610,11 @@ with tab_view:
                 denom = completed + valid_abandon
                 rate = ar.answer_rate(completed, valid_abandon)
 
-                # 6. 選択結果を大きく表示
+                # 6. 業務グループ + 秒数で結果を大きく表示
+                group_caption = f"業務グループ『{group_label}』 / " if group_label else ""
                 st.markdown(
-                    f"#### 選択結果：{threshold_sel}秒 / 対象期間 {view_start} 〜 {view_end} / "
-                    f"選択回線 {len(selected_lines)} 件"
+                    f"#### {group_caption}{threshold_sel}秒 / 対象期間 {view_start} 〜 {view_end} / "
+                    f"対象回線 {len(selected_lines)} 件"
                 )
                 b1, b2, b3, b4, b5 = st.columns(5)
                 b1.metric("応答率", f"{rate:.1f}%")
