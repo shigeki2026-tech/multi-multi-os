@@ -482,21 +482,43 @@ with st.container(border=True):
                 )
                 st.rerun()
 
-    header = st.columns([1.6, 1.8, 0.8, 0.9])
-    for col, label in zip(header, ["親ラベル", "子スキルグループ", "状態", "操作"]):
-        col.markdown(f"**{label}**")
-    for row in merge_rows:
-        cols = st.columns([1.6, 1.8, 0.8, 0.9])
-        cols[0].write(row["merge_label"])
-        cols[1].caption(row["child_skill_group"])
-        cols[2].markdown(
-            badge("有効", "#16A34A") if row["is_active"] else badge("無効", "#6B7280"),
-            unsafe_allow_html=True,
-        )
-        if cols[3].button("有効/無効", key=f"toggle_merge_{row['id']}"):
-            with service_scope() as container:
-                container.answer_rate_master_service.toggle_skill_group_merge(user["user_id"], row["id"])
-            st.rerun()
+    # 登録済み一覧は件数が多くなる（数百件）ため初期表示しない。expander内に dataframe で格納。
+    # 有効/無効管理は壊さず、行ボタンの大量描画を避けて選択式（コンパクト）で切替える。
+    st.markdown(f"**登録済み業務グループ**（{len(merge_rows)} 件）")
+    with st.expander("登録済み業務グループ一覧を表示", expanded=False):
+        if merge_rows:
+            st.dataframe(
+                [
+                    {
+                        "親ラベル": r["merge_label"],
+                        "子スキルグループ": r["child_skill_group"],
+                        "状態": "有効" if r["is_active"] else "無効",
+                    }
+                    for r in merge_rows
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            merge_by_id = {r["id"]: r for r in merge_rows}
+            st.caption("有効/無効を切り替える定義を選んで実行してください。")
+            tc1, tc2 = st.columns([3.0, 1.0])
+            toggle_id = tc1.selectbox(
+                "対象の業務グループ定義",
+                options=[r["id"] for r in merge_rows],
+                format_func=lambda i: (
+                    f"{merge_by_id[i]['merge_label']} ／ {merge_by_id[i]['child_skill_group']}"
+                    f"（{'有効' if merge_by_id[i]['is_active'] else '無効'}）"
+                ),
+                key="merge_toggle_select",
+            )
+            if tc2.button("有効/無効を切替", key="merge_toggle_btn"):
+                with service_scope() as container:
+                    container.answer_rate_master_service.toggle_skill_group_merge(
+                        user["user_id"], toggle_id
+                    )
+                st.rerun()
+        else:
+            st.caption("まだ業務グループ定義がありません。")
 
 # --- 業務グループ定義のバックアップ（エクスポート / インポート） ---
 st.subheader("業務グループ定義のバックアップ（CSVエクスポート / インポート）")
