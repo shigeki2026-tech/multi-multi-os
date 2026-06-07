@@ -109,6 +109,87 @@ class AnswerRateMasterService:
             for m in self.repo.list_skill_group_merge(active_only=False)
         ]
 
+    def export_skill_group_merge_rows(self) -> list[dict]:
+        """skill_group_merge をCSVバックアップ用の plain dict 一覧で返す（UI層へORMは渡さない）。
+
+        DBはGit管理外のため、業務グループ定義を失わないよう定期エクスポートに使う。
+        列: merge_label, child_skill_group, is_active, created_at, updated_at。
+        """
+        rows = []
+        for m in self.repo.list_skill_group_merge(active_only=False):
+            rows.append(
+                {
+                    "merge_label": m.merge_label,
+                    "child_skill_group": m.child_skill_group,
+                    "is_active": bool(m.is_active),
+                    "created_at": str(m.created_at) if m.created_at is not None else "",
+                    "updated_at": str(m.updated_at) if m.updated_at is not None else "",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _parse_is_active(value, default: bool = True) -> bool:
+        """CSVの is_active 値を bool へ。未知・空は default。"""
+        if value is None:
+            return default
+        s = str(value).strip().lower()
+        if s == "":
+            return default
+        if s in {"1", "true", "yes", "y", "t", "有効", "はい", "on"}:
+            return True
+        if s in {"0", "false", "no", "n", "f", "無効", "いいえ", "off"}:
+            return False
+        return default
+
+    REQUIRED_MERGE_IMPORT_COLUMNS = ("merge_label", "child_skill_group")
+
+    def import_skill_group_merge_rows(self, actor_id: int, rows: list[dict]) -> dict:
+        """CSV由来の行から skill_group_merge へ一括登録する（追加・重複スキップ方式）。
+
+        - 既存の (merge_label, child_skill_group) ペアは重複登録しない（skipped）。
+        - 同一ファイル内の重複も1回だけ登録する。
+        - is_active が行にあれば新規登録時に反映（既存ペアは触らない＝非破壊）。
+        - 既存データの削除・全置換はしない（将来の別タスク）。
+        戻り値: {read, added, skipped, errors, error_details}（UI層へORMは渡さない）。
+        """
+        existing_pairs = {
+            (m.merge_label, m.child_skill_group)
+            for m in self.repo.list_skill_group_merge(active_only=False)
+        }
+        seen_in_file = set()
+        read = added = skipped = errors = 0
+        error_details: list[str] = []
+
+        for idx, row in enumerate(rows, start=1):
+            label = str(row.get("merge_label") or "").strip()
+            child = str(row.get("child_skill_group") or "").strip()
+            if not label and not child:
+                continue  # 空行は無視（読込件数に数えない）
+            read += 1
+            if not label or not child:
+                errors += 1
+                error_details.append(f"{idx}行目: merge_label と child_skill_group は必須です。")
+                continue
+            pair = (label, child)
+            if pair in existing_pairs or pair in seen_in_file:
+                skipped += 1
+                continue
+            is_active = self._parse_is_active(row.get("is_active"), default=True)
+            obj = SkillGroupMerge(merge_label=label, child_skill_group=child, is_active=is_active)
+            self.repo.add(obj)
+            self._audit("skill_group_merge", obj.id, "create", actor_id, after=obj)
+            seen_in_file.add(pair)
+            added += 1
+
+        return {
+            "read": read,
+            "added": added,
+            "skipped": skipped,
+            "errors": errors,
+            "error_details": error_details,
+        }
+
     def create_skill_group_merge(self, actor_id: int, merge_label: str, child_skill_group: str):
         obj = SkillGroupMerge(
             merge_label=merge_label.strip(),
