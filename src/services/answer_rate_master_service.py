@@ -15,6 +15,22 @@ DEFAULT_GROUP_CANDIDATE_KEYWORDS = (
     "RPA",
 )
 
+# 大きい候補を地域名で分割するための初期キーワード（DB保存しない。画面で編集可能）。
+DEFAULT_REGION_KEYWORDS = (
+    "東京",
+    "横浜",
+    "大阪",
+    "名古屋",
+    "札幌",
+    "仙台",
+    "千葉",
+    "埼玉",
+    "神戸",
+    "京都",
+    "福岡",
+    "広島",
+)
+
 
 class AnswerRateMasterService:
     def __init__(self, answer_rate_master_repository, audit_service=None):
@@ -174,6 +190,67 @@ class AnswerRateMasterService:
                 }
             )
         return candidates
+
+    def build_split_group_candidates(self, parent_candidate: dict, region_keywords=None) -> list[dict]:
+        """大きい業務グループ候補を地域名で分割した子候補を返す（自動登録はしない）。
+
+        分割ルール（現実的・優先順）:
+          1. skill_group 名に含まれる地域名（region_keywords）で振り分ける。
+             複数地域が含まれる場合は region_keywords の並び順で最初に一致した地域へ入れる。
+          2. どの地域名にも当たらない回線は「(親名)_未分類」候補へまとめる。
+
+        完全自動分類は危険なため、あくまで候補（list[dict]）を返すだけ。UI層へORMは渡さない。
+        各子候補: {label, keyword(親), region, lines, line_count,
+                   registered_count, unregistered_count, fully_registered}
+        """
+        regions_src = region_keywords if region_keywords is not None else list(DEFAULT_REGION_KEYWORDS)
+        seen = set()
+        regions = []
+        for r in regions_src:
+            rr = str(r).strip()
+            if rr and rr not in seen:
+                seen.add(rr)
+                regions.append(rr)
+
+        parent_label = str(parent_candidate.get("label") or parent_candidate.get("keyword") or "").strip()
+        keyword = parent_candidate.get("keyword", parent_label)
+        lines = [str(x) for x in (parent_candidate.get("lines") or [])]
+
+        existing_pairs = {
+            (m.merge_label, m.child_skill_group)
+            for m in self.repo.list_skill_group_merge(active_only=False)
+        }
+
+        buckets: dict[str, list[str]] = {r: [] for r in regions}
+        unclassified: list[str] = []
+        for line in lines:
+            matched_region = next((r for r in regions if r in line), None)
+            if matched_region is not None:
+                buckets[matched_region].append(line)
+            else:
+                unclassified.append(line)
+
+        def _candidate(label: str, region: str, group_lines: list[str]) -> dict:
+            group_lines = sorted(group_lines)
+            registered = [sg for sg in group_lines if (label, sg) in existing_pairs]
+            return {
+                "label": label,
+                "keyword": keyword,
+                "region": region,
+                "lines": group_lines,
+                "line_count": len(group_lines),
+                "registered_count": len(registered),
+                "unregistered_count": len(group_lines) - len(registered),
+                "fully_registered": bool(group_lines) and len(registered) == len(group_lines),
+            }
+
+        result = []
+        for r in regions:
+            if buckets[r]:
+                result.append(_candidate(f"{parent_label}_{r}", r, buckets[r]))
+        if unclassified:
+            result.append(_candidate(f"{parent_label}_未分類", "未分類", unclassified))
+        return result
 
     def toggle_skill_group_merge(self, actor_id: int, id_: int):
         obj = self.repo.get_skill_group_merge(id_)
