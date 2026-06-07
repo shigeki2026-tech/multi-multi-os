@@ -4,6 +4,17 @@
 """
 from src.models.entities import AbandonRule, ExcludeNumber, Operator, SkillGroupMerge
 
+# 業務グループ候補の初期キーワード（DB保存しない。画面で追加・編集可能）。
+# skill_group 名にこのキーワードを含む回線を1つの候補グループとしてまとめる。
+DEFAULT_GROUP_CANDIDATE_KEYWORDS = (
+    "ネオマルス",
+    "弁護士ドットコム",
+    "ヨシケイ",
+    "KDDI",
+    "LEOC",
+    "RPA",
+)
+
 
 class AnswerRateMasterService:
     def __init__(self, answer_rate_master_repository, audit_service=None):
@@ -119,6 +130,50 @@ class AnswerRateMasterService:
             self._audit("skill_group_merge", obj.id, "create", actor_id, after=obj)
             added += 1
         return {"added": added, "skipped": skipped, "label": label}
+
+    def build_group_candidates(self, skill_groups, keywords=None) -> list[dict]:
+        """取込済み skill_group 一覧から、キーワードを含む回線を業務グループ候補としてまとめる。
+
+        自動登録はしない（候補を返すだけ）。UI層へORMは渡さず list[dict] を返す。
+        各候補: {label, keyword, lines, line_count, registered_count,
+                 unregistered_count, fully_registered}
+        - label の初期値はキーワード（UIで編集可能）。
+        - registered_count は「キーワードと同名の merge_label」に既に登録済みの回線数。
+        """
+        kw_list = keywords if keywords is not None else list(DEFAULT_GROUP_CANDIDATE_KEYWORDS)
+        # 重複・空白を除去しつつ入力順を維持
+        seen = set()
+        norm_keywords = []
+        for kw in kw_list:
+            k = str(kw).strip()
+            if k and k.lower() not in seen:
+                seen.add(k.lower())
+                norm_keywords.append(k)
+
+        groups = [str(sg) for sg in skill_groups]
+        existing_pairs = {
+            (m.merge_label, m.child_skill_group)
+            for m in self.repo.list_skill_group_merge(active_only=False)
+        }
+
+        candidates = []
+        for kw in norm_keywords:
+            matched = sorted({sg for sg in groups if kw.lower() in sg.lower()})
+            if not matched:
+                continue
+            registered = [sg for sg in matched if (kw, sg) in existing_pairs]
+            candidates.append(
+                {
+                    "label": kw,
+                    "keyword": kw,
+                    "lines": matched,
+                    "line_count": len(matched),
+                    "registered_count": len(registered),
+                    "unregistered_count": len(matched) - len(registered),
+                    "fully_registered": len(registered) == len(matched),
+                }
+            )
+        return candidates
 
     def toggle_skill_group_merge(self, actor_id: int, id_: int):
         obj = self.repo.get_skill_group_merge(id_)

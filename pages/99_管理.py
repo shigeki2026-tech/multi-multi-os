@@ -25,6 +25,7 @@ def color_chip(color: str) -> str:
 
 st.set_page_config(page_title="管理", layout="wide")
 
+from src.services.answer_rate_master_service import DEFAULT_GROUP_CANDIDATE_KEYWORDS
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
 from src.ui.session import ensure_admin, ensure_logged_in, render_sidebar
@@ -487,6 +488,91 @@ with st.container(border=True):
             with service_scope() as container:
                 container.answer_rate_master_service.toggle_skill_group_merge(user["user_id"], row["id"])
             st.rerun()
+
+# --- 業務グループ候補（自動抽出 → 人間確認 → 一括登録） ---
+st.subheader("業務グループ候補（取込済み回線から自動抽出）")
+with st.container(border=True):
+    st.caption(
+        "取込済みの skill_group をキーワードでまとめた候補を表示します。"
+        "自動登録はしません。内容を確認し、候補ごとに『この候補を登録』を押すと skill_group_merge に登録します。"
+    )
+
+    if not skill_group_options:
+        st.info("取込済みの回線データがありません。『応答率速報』のCDR取込後に候補を抽出できます。")
+    else:
+        default_kw_text = "、".join(DEFAULT_GROUP_CANDIDATE_KEYWORDS)
+        kw_text = st.text_area(
+            "キーワード（読点・改点・カンマ区切り。初期値は編集できます。保存はされません）",
+            value=default_kw_text,
+            height=80,
+            key="group_candidate_keywords",
+        )
+        import re as _re  # 区切り文字（読点/カンマ/改行/中点）で分割
+        keywords = [k.strip() for k in _re.split(r"[、,\n・]+", kw_text) if k.strip()]
+
+        with service_scope() as container:
+            candidates = container.answer_rate_master_service.build_group_candidates(
+                skill_group_options, keywords
+            )
+
+        if not candidates:
+            st.info("キーワードに一致する回線がありませんでした。キーワードを見直してください。")
+        else:
+            st.caption(f"候補 {len(candidates)} 件（キーワードを含む回線をまとめています）")
+
+        def _short(name: str, limit: int = 46) -> str:
+            name = str(name)
+            return name if len(name) <= limit else name[:limit] + "…"
+
+        for cand in candidates:
+            kw = cand["keyword"]
+            with st.container(border=True):
+                head = st.columns([2.2, 1.0])
+                edited_label = head[0].text_input(
+                    "候補グループ名（登録前に編集可）",
+                    value=cand["label"],
+                    key=f"cand_label_{kw}",
+                )
+                if cand["fully_registered"]:
+                    head[1].markdown(badge("登録済み", "#16A34A"), unsafe_allow_html=True)
+                else:
+                    head[1].markdown(
+                        badge(f"未登録 {cand['unregistered_count']}件", "#D97706"),
+                        unsafe_allow_html=True,
+                    )
+
+                st.caption(
+                    f"対象回線数: {cand['line_count']} 件 ／ "
+                    f"登録済み {cand['registered_count']} 件 ／ 未登録 {cand['unregistered_count']} 件"
+                    f"（キーワード『{kw}』）"
+                )
+                with st.expander(f"対象回線一覧（{cand['line_count']} 件）を確認", expanded=False):
+                    st.dataframe(
+                        [{"回線(skill_group)": line} for line in cand["lines"]],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                disabled = cand["fully_registered"]
+                if st.button(
+                    "この候補を登録",
+                    key=f"cand_reg_{kw}",
+                    type="primary",
+                    disabled=disabled,
+                ):
+                    try:
+                        with service_scope() as container:
+                            res = container.answer_rate_master_service.create_skill_group_merge_bulk(
+                                user["user_id"], edited_label, cand["lines"]
+                            )
+                    except ValueError as exc:
+                        st.warning(str(exc))
+                    else:
+                        st.success(
+                            f"業務グループ『{res['label']}』に {res['added']} 件登録しました"
+                            f"（重複スキップ {res['skipped']} 件）。"
+                        )
+                        st.rerun()
 
 # --- オペレーター (operators) ---
 st.subheader("オペレーター")
