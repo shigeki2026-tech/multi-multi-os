@@ -1,3 +1,6 @@
+import io
+
+import pandas as pd
 import streamlit as st
 
 
@@ -494,6 +497,85 @@ with st.container(border=True):
             with service_scope() as container:
                 container.answer_rate_master_service.toggle_skill_group_merge(user["user_id"], row["id"])
             st.rerun()
+
+# --- 業務グループ定義のバックアップ（エクスポート / インポート） ---
+st.subheader("業務グループ定義のバックアップ（CSVエクスポート / インポート）")
+with st.container(border=True):
+    st.warning(
+        "このデータはローカルDBに保存されます。Gitには保存されないため、定期的にCSVエクスポートしてください。"
+    )
+
+    # --- エクスポート ---
+    with service_scope() as container:
+        export_rows = container.answer_rate_master_service.export_skill_group_merge_rows()
+    st.markdown("**エクスポート**")
+    st.caption(f"現在の登録: {len(export_rows)} 件（merge_label / child_skill_group / is_active / created_at / updated_at）")
+    if export_rows:
+        export_df = pd.DataFrame(
+            export_rows,
+            columns=["merge_label", "child_skill_group", "is_active", "created_at", "updated_at"],
+        )
+        export_csv = export_df.to_csv(index=False).encode("utf-8-sig")  # Excelで開きやすいBOM付き
+        st.download_button(
+            "業務グループ定義をCSVダウンロード",
+            data=export_csv,
+            file_name="skill_group_merge_backup.csv",
+            mime="text/csv",
+            key="merge_export_dl",
+        )
+    else:
+        st.info("エクスポートできる業務グループ定義がありません。")
+
+    st.divider()
+
+    # --- インポート ---
+    st.markdown("**インポート**（追加・重複スキップ方式。既存データの削除・全置換はしません）")
+    st.caption(
+        "必須列: merge_label, child_skill_group（任意列: is_active）。"
+        "既存の同一ペア（merge_label + child_skill_group）は重複登録しません。"
+    )
+    REQUIRED_COLS = ["merge_label", "child_skill_group"]
+    uploaded_merge = st.file_uploader("インポートCSV", type=["csv"], key="merge_import_uploader")
+
+    if uploaded_merge is not None:
+        raw = uploaded_merge.getvalue()
+        import_df = None
+        read_error = None
+        for enc in ("utf-8-sig", "cp932"):
+            try:
+                import_df = pd.read_csv(io.BytesIO(raw), encoding=enc, dtype=str).fillna("")
+                break
+            except Exception as exc:  # 次の候補へフォールバック
+                read_error = exc
+        if import_df is None:
+            st.error(f"CSVを読み込めませんでした: {read_error}")
+        elif not set(REQUIRED_COLS).issubset(set(import_df.columns)):
+            missing = [c for c in REQUIRED_COLS if c not in import_df.columns]
+            st.error(f"必須列が不足しています: {', '.join(missing)}（保存していません）")
+        else:
+            preview_cols = [c for c in ["merge_label", "child_skill_group", "is_active"] if c in import_df.columns]
+            st.caption(f"読込プレビュー（{len(import_df)} 行）")
+            st.dataframe(import_df[preview_cols], use_container_width=True, hide_index=True)
+
+            if st.button("インポート実行", type="primary", key="merge_import_run"):
+                rows = import_df.to_dict(orient="records")
+                try:
+                    with service_scope() as container:
+                        res = container.answer_rate_master_service.import_skill_group_merge_rows(
+                            user["user_id"], rows
+                        )
+                except Exception as exc:  # 例外は握りつぶさず表示
+                    st.error(f"インポートに失敗しました: {exc}")
+                else:
+                    st.success(
+                        f"インポート完了: 読込 {res['read']} 件 / 追加 {res['added']} 件 / "
+                        f"スキップ(重複) {res['skipped']} 件 / エラー {res['errors']} 件"
+                    )
+                    if res["error_details"]:
+                        with st.expander(f"エラー詳細（{len(res['error_details'])} 件）", expanded=False):
+                            for msg in res["error_details"]:
+                                st.write(f"- {msg}")
+                    st.rerun()
 
 # --- 業務グループ候補（自動抽出 → 人間確認 → 一括登録） ---
 st.subheader("業務グループ候補（取込済み回線から自動抽出）")
