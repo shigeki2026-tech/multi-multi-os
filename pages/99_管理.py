@@ -45,6 +45,8 @@ with service_scope() as container:
     abandon_rows = container.answer_rate_master_service.list_abandon_rules()
     merge_rows = container.answer_rate_master_service.list_skill_group_merge()
     operator_rows = container.answer_rate_master_service.list_operators()
+    # 業務グループ登録の子スキルグループ候補（取込済み中間集計に実在する回線）
+    skill_group_options = container.answer_rate_threshold_repository.list_skill_groups()
 
 st.title("管理")
 st.caption("利用者マスタ、チームマスタ、プロジェクトマスタ、監査ログを確認します。")
@@ -431,23 +433,43 @@ with st.container(border=True):
             st.rerun()
 
 # --- 合算定義 (skill_group_merge) ---
-st.subheader("合算定義（スキルグループ束ね）")
+st.subheader("合算定義（業務グループ＝スキルグループ束ね）")
 with st.container(border=True):
-    st.caption("親ラベル ← 子スキルグループを1行ずつ登録します。合算値は保存せず表示時に都度計算します。")
-    with st.form("create_merge_form", clear_on_submit=True):
-        cols = st.columns([1.6, 1.8, 0.8])
-        new_label = cols[0].text_input("親ラベル")
-        new_child = cols[1].text_input("子スキルグループ")
-        add_merge = cols[2].form_submit_button("追加", type="primary")
+    st.caption(
+        "業務グループ（親ラベル）に、配下の子スキルグループ（回線）を複数まとめて登録します。"
+        "応答率閲覧タブはこの業務グループ単位で集計します。合算値は保存せず表示時に都度計算します。"
+    )
+
+    # 一括登録: 親ラベル + 子スキルグループ複数選択（候補が無ければ手入力にフォールバック）
+    with st.form("create_merge_bulk_form", clear_on_submit=True):
+        new_label = st.text_input("業務グループ名（親ラベル）", placeholder="例: 弁護士グループ")
+        if skill_group_options:
+            new_children = st.multiselect(
+                f"子スキルグループ（回線）を選択　全 {len(skill_group_options)} 件（入力して検索できます）",
+                options=skill_group_options,
+            )
+            children_text = ""
+        else:
+            st.caption("取込済みデータが無いため候補を表示できません。1行に1回線ずつ入力してください。")
+            new_children = []
+            children_text = st.text_area("子スキルグループ（1行に1件）", height=120)
+        add_merge = st.form_submit_button("この業務グループに一括登録", type="primary")
         if add_merge:
-            if not new_label.strip() or not new_child.strip():
-                st.warning("親ラベルと子スキルグループを入力してください。")
-            else:
+            children = list(new_children) + [
+                line.strip() for line in children_text.splitlines() if line.strip()
+            ]
+            try:
                 with service_scope() as container:
-                    container.answer_rate_master_service.create_skill_group_merge(
-                        user["user_id"], new_label, new_child
+                    res = container.answer_rate_master_service.create_skill_group_merge_bulk(
+                        user["user_id"], new_label, children
                     )
-                st.success("合算定義を追加しました。")
+            except ValueError as exc:
+                st.warning(str(exc))
+            else:
+                st.success(
+                    f"業務グループ『{res['label']}』に {res['added']} 件登録しました"
+                    f"（重複スキップ {res['skipped']} 件）。"
+                )
                 st.rerun()
 
     header = st.columns([1.6, 1.8, 0.8, 0.9])
