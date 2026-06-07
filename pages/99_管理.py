@@ -25,7 +25,13 @@ def color_chip(color: str) -> str:
 
 st.set_page_config(page_title="管理", layout="wide")
 
-from src.services.answer_rate_master_service import DEFAULT_GROUP_CANDIDATE_KEYWORDS
+from src.services.answer_rate_master_service import (
+    DEFAULT_GROUP_CANDIDATE_KEYWORDS,
+    DEFAULT_REGION_KEYWORDS,
+)
+
+# この件数以上の候補は「分割候補を表示」expander を出す（大きすぎる候補の分割登録用）。
+SPLIT_SUGGEST_MIN_LINES = 30
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
 from src.ui.session import ensure_admin, ensure_logged_in, render_sidebar
@@ -520,59 +526,97 @@ with st.container(border=True):
         else:
             st.caption(f"候補 {len(candidates)} 件（キーワードを含む回線をまとめています）")
 
-        def _short(name: str, limit: int = 46) -> str:
-            name = str(name)
-            return name if len(name) <= limit else name[:limit] + "…"
+        def render_group_candidate(cand: dict, key_id: str, caption_suffix: str = "",
+                                   nested: bool = False) -> None:
+            """候補1件を描画（名前編集・件数・一覧・登録ボタン）。分割候補にも再利用する。
+
+            nested=True（親expander内＝分割候補）のときは、expanderを入れ子にできないため
+            一覧はチェックボックスで表示切替する（要件: 各分割候補の一覧を確認できる）。
+            """
+            head = st.columns([2.2, 1.0])
+            edited_label = head[0].text_input(
+                "候補グループ名（登録前に編集可）",
+                value=cand["label"],
+                key=f"cand_label_{key_id}",
+            )
+            if cand["fully_registered"]:
+                head[1].markdown(badge("登録済み", "#16A34A"), unsafe_allow_html=True)
+            else:
+                head[1].markdown(
+                    badge(f"未登録 {cand['unregistered_count']}件", "#D97706"),
+                    unsafe_allow_html=True,
+                )
+            st.caption(
+                f"対象回線数: {cand['line_count']} 件 ／ "
+                f"登録済み {cand['registered_count']} 件 ／ 未登録 {cand['unregistered_count']} 件{caption_suffix}"
+            )
+            lines_view = [{"回線(skill_group)": line} for line in cand["lines"]]
+            if nested:
+                if st.checkbox(
+                    f"対象回線一覧（{cand['line_count']} 件）を表示", key=f"cand_list_{key_id}"
+                ):
+                    st.dataframe(lines_view, use_container_width=True, hide_index=True)
+            else:
+                with st.expander(f"対象回線一覧（{cand['line_count']} 件）を確認", expanded=False):
+                    st.dataframe(lines_view, use_container_width=True, hide_index=True)
+            if st.button(
+                "この候補を登録",
+                key=f"cand_reg_{key_id}",
+                type="primary",
+                disabled=cand["fully_registered"],
+            ):
+                try:
+                    with service_scope() as container:
+                        res = container.answer_rate_master_service.create_skill_group_merge_bulk(
+                            user["user_id"], edited_label, cand["lines"]
+                        )
+                except ValueError as exc:
+                    st.warning(str(exc))
+                else:
+                    st.success(
+                        f"業務グループ『{res['label']}』に {res['added']} 件登録しました"
+                        f"（重複スキップ {res['skipped']} 件）。"
+                    )
+                    st.rerun()
 
         for cand in candidates:
             kw = cand["keyword"]
             with st.container(border=True):
-                head = st.columns([2.2, 1.0])
-                edited_label = head[0].text_input(
-                    "候補グループ名（登録前に編集可）",
-                    value=cand["label"],
-                    key=f"cand_label_{kw}",
-                )
-                if cand["fully_registered"]:
-                    head[1].markdown(badge("登録済み", "#16A34A"), unsafe_allow_html=True)
-                else:
-                    head[1].markdown(
-                        badge(f"未登録 {cand['unregistered_count']}件", "#D97706"),
-                        unsafe_allow_html=True,
-                    )
+                render_group_candidate(cand, kw, caption_suffix=f"（キーワード『{kw}』）")
 
-                st.caption(
-                    f"対象回線数: {cand['line_count']} 件 ／ "
-                    f"登録済み {cand['registered_count']} 件 ／ 未登録 {cand['unregistered_count']} 件"
-                    f"（キーワード『{kw}』）"
-                )
-                with st.expander(f"対象回線一覧（{cand['line_count']} 件）を確認", expanded=False):
-                    st.dataframe(
-                        [{"回線(skill_group)": line} for line in cand["lines"]],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                disabled = cand["fully_registered"]
-                if st.button(
-                    "この候補を登録",
-                    key=f"cand_reg_{kw}",
-                    type="primary",
-                    disabled=disabled,
-                ):
-                    try:
-                        with service_scope() as container:
-                            res = container.answer_rate_master_service.create_skill_group_merge_bulk(
-                                user["user_id"], edited_label, cand["lines"]
-                            )
-                    except ValueError as exc:
-                        st.warning(str(exc))
-                    else:
-                        st.success(
-                            f"業務グループ『{res['label']}』に {res['added']} 件登録しました"
-                            f"（重複スキップ {res['skipped']} 件）。"
+                # 対象回線数が多い候補だけ、地域名での分割候補を提示（初期は閉じる）。
+                if cand["line_count"] >= SPLIT_SUGGEST_MIN_LINES:
+                    with st.expander(
+                        f"分割候補を表示（{cand['line_count']} 件と大きいため地域別に分割）",
+                        expanded=False,
+                    ):
+                        st.caption(
+                            "地域名で分割した候補です。完全自動分類ではないため、内容を確認してから登録してください。"
+                            "複数地域を含む場合は最初に一致した地域に入ります。どれにも当たらない回線は『未分類』です。"
                         )
-                        st.rerun()
+                        region_text = st.text_area(
+                            "地域名（読点・カンマ・改行区切り。編集可。保存はされません）",
+                            value="、".join(DEFAULT_REGION_KEYWORDS),
+                            height=70,
+                            key=f"split_regions_{kw}",
+                        )
+                        region_keywords = [
+                            r.strip() for r in _re.split(r"[、,\n・]+", region_text) if r.strip()
+                        ]
+                        with service_scope() as container:
+                            split_candidates = container.answer_rate_master_service.build_split_group_candidates(
+                                cand, region_keywords
+                            )
+                        if not split_candidates:
+                            st.info("分割候補がありません。")
+                        for sc in split_candidates:
+                            with st.container(border=True):
+                                render_group_candidate(
+                                    sc,
+                                    f"{kw}__{sc['region']}",
+                                    caption_suffix=f"（地域: {sc['region']}）",
+                                    nested=True,
+                                )
 
 # --- オペレーター (operators) ---
 st.subheader("オペレーター")
