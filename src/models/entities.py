@@ -327,6 +327,41 @@ class CallStat(TimestampMixin, Base):
     valid_abandon_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AnswerRateThresholdStat(TimestampMixin, Base):
+    """閲覧用の中間集計（CSV再アップロード無しで秒数閾値を切替えて応答率を見るため）。
+
+    保存するのは集計済みデータのみ。生CSV・個別通話明細は保存しない。
+    粒度は (stat_date, time_slot, skill_group, threshold_seconds)。
+    threshold_seconds は 0/3/10/20/30 の5種類を取込時に保存する。
+    完了呼は閾値に依存しないため全閾値で同値、有効放棄呼は閾値ごとに変わる。
+
+    合算値（業務名/回線群の合計）は保存しない。閲覧時に選択回線を都度合算して計算する
+    （行ごとの answer_rate/denominator は単一 skill_group・単一閾値の参考値であり、
+    合算応答率は completed_count/valid_abandon_count の合計から都度再計算すること）。
+
+    call_stats（正式閾値用）とは別テーブル。応答率の計算定義は call_stats と同一。
+    """
+
+    __tablename__ = "answer_rate_threshold_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "stat_date", "time_slot", "skill_group", "threshold_seconds",
+            name="uq_arts_date_slot_group_threshold",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stat_date: Mapped[date] = mapped_column(Date)
+    time_slot: Mapped[int] = mapped_column(Integer)  # 着信時間の「時」(0-23)
+    skill_group: Mapped[str] = mapped_column(String(255))
+    threshold_seconds: Mapped[int] = mapped_column(Integer)  # 0/3/10/20/30
+    completed_count: Mapped[int] = mapped_column(Integer, default=0)
+    valid_abandon_count: Mapped[int] = mapped_column(Integer, default=0)
+    denominator: Mapped[int] = mapped_column(Integer, default=0)  # 完了+有効放棄（単一行の参考値）
+    answer_rate: Mapped[float] = mapped_column(Numeric(5, 1), default=0)  # 単一行の参考値
+    source_filename: Mapped[str | None] = mapped_column(String(255))
+
+
 class ImportLog(Base):
     """CDR取込監査。後から数字を再現できるよう、取込時点のルールスナップショットを保存する。"""
 

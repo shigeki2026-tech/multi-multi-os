@@ -4,6 +4,7 @@ from src.repositories.admin_repository import AdminRepository
 from src.repositories.answer_rate_master_repository import AnswerRateMasterRepository
 from src.repositories.attendance_repository import AttendanceRepository
 from src.repositories.audit_repository import AuditRepository
+from src.repositories.answer_rate_threshold_repository import AnswerRateThresholdRepository
 from src.repositories.call_stats_repository import CallStatsRepository
 from src.repositories.db import get_session
 from src.repositories.leoc_repository import LeocRepository
@@ -44,6 +45,7 @@ class ServiceContainer:
         self.attendance_repository = AttendanceRepository(session)
         self.answer_rate_master_repository = AnswerRateMasterRepository(session)
         self.call_stats_repository = CallStatsRepository(session)
+        self.answer_rate_threshold_repository = AnswerRateThresholdRepository(session)
 
         self.audit_service = AuditService(self.audit_repository)
         self.master_service = MasterService(self.master_repository, self.audit_service)
@@ -78,6 +80,7 @@ class ServiceContainer:
             self.call_stats_repository,
             self.answer_rate_master_repository,
             self.audit_service,
+            threshold_repository=self.answer_rate_threshold_repository,
         )
 
 

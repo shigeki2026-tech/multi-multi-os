@@ -15,7 +15,7 @@ render_sidebar(user)
 
 st.title("応答率速報")
 
-tab_manual, tab_cdr = st.tabs(["手入力", "CDR取込"])
+tab_manual, tab_cdr, tab_view = st.tabs(["手入力", "CDR取込", "応答率閲覧"])
 
 # ===========================================================================
 # 手入力タブ（既存 leoc_service。機能は変更しない）
@@ -362,7 +362,11 @@ with tab_cdr:
                     st.error(str(exc))
                 else:
                     st.session_state["cdr_saved"] = res
-                    st.success(f"保存しました。call_stats {res['inserted_stat_rows']:,} 行 / import_log #{res['import_log_id']}")
+                    st.success(
+                        f"保存しました。call_stats {res['inserted_stat_rows']:,} 行 / "
+                        f"閲覧用集計(answer_rate_threshold_stats) {res.get('inserted_threshold_rows', 0):,} 行 / "
+                        f"import_log #{res['import_log_id']}"
+                    )
 
         st.subheader("報告文生成")
         # スキルグループ別が大量に展開されると実務報告文として使いにくいため表示を切替える。
@@ -398,13 +402,20 @@ with tab_cdr:
     st.subheader("取込済み集計の削除（再取込用）")
     st.caption(
         "abandon_rules の秒数閾値を変更した後、既存の集計（0秒既定など）を削除して同じCSVを再取込するための機能です。"
-        "削除対象は raw skill_group の call_stats のみで、合算値は保存していないため対象外です。削除は取り消せません。"
+        "削除対象は call_stats（正式閾値用）と answer_rate_threshold_stats（閲覧用の0/3/10/20/30秒中間集計）の両方です。"
+        "合算値は保存していないため対象外です。削除は取り消せません。"
     )
     with service_scope() as container:
         del_min, del_max = container.call_stats_repository.stat_date_range()
+        # call_stats が空でも閲覧用集計だけ残るケースに備え、両方の範囲を考慮する。
+        th_min, th_max = container.answer_rate_threshold_repository.stat_date_range()
+    _mins = [d for d in (del_min, th_min) if d is not None]
+    _maxs = [d for d in (del_max, th_max) if d is not None]
+    del_min = min(_mins) if _mins else None
+    del_max = max(_maxs) if _maxs else None
 
     if del_min is None:
-        st.info("削除できる call_stats がありません（まだ取込がありません）。")
+        st.info("削除できる集計がありません（まだ取込がありません）。")
     else:
         with st.expander("取込履歴を参照（削除する期間の特定用）", expanded=False):
             st.dataframe(logs, use_container_width=True, hide_index=True)
@@ -420,13 +431,20 @@ with tab_cdr:
         else:
             with service_scope() as container:
                 del_count = container.call_stats_repository.count_stats_in_range(del_start, del_end)
-            st.markdown(f"**削除対象 call_stats: {del_count:,} 行**（{del_start} 〜 {del_end}）")
+                del_th_count = container.answer_rate_threshold_repository.count_in_range(del_start, del_end)
+            dm1, dm2 = st.columns(2)
+            dm1.markdown(f"**削除対象 call_stats: {del_count:,} 行**")
+            dm2.markdown(f"**削除対象 閲覧用集計: {del_th_count:,} 行**")
+            st.caption(f"対象期間（stat_date）: {del_start} 〜 {del_end}")
             # 削除前の確認チェックを必須にする（チェックが無いと削除ボタンを押せない）。
             del_confirm = st.checkbox(
-                "上記の call_stats を削除することを確認しました（取り消せません）", key="cdr_del_confirm"
+                "上記の集計（call_stats と閲覧用集計）を削除することを確認しました（取り消せません）",
+                key="cdr_del_confirm",
             )
             if st.button(
-                "call_stats を削除する", type="secondary", disabled=(del_count == 0 or not del_confirm)
+                "集計を削除する",
+                type="secondary",
+                disabled=((del_count == 0 and del_th_count == 0) or not del_confirm),
             ):
                 try:
                     with service_scope() as container:
@@ -440,8 +458,159 @@ with tab_cdr:
                     st.session_state.pop("cdr_prepared", None)
                     st.session_state["cdr_saved"] = None
                     st.success(
-                        f"call_stats {del_res['deleted_rows']:,} 行を削除しました"
+                        f"call_stats {del_res['deleted_rows']:,} 行 / "
+                        f"閲覧用集計 {del_res.get('deleted_threshold_rows', 0):,} 行を削除しました"
                         f"（import_log #{del_res['import_log_id']} に記録）。"
                         "同じCSVを『集計プレビュー』からやり直して再取込できます。"
                     )
                     st.rerun()
+
+# ===========================================================================
+# 応答率閲覧タブ（新規）
+# 取込時に保存した中間集計 answer_rate_threshold_stats から、CSVを再アップロードせずに
+# 期間・業務名(合算ラベル)・回線(skill_group)・秒数閾値を選んで応答率を表示する。
+# 合算値は保存しない。選択回線の completed/valid_abandon を都度合算し応答率を再計算する。
+# UI層へSQLAlchemy ORMは渡さない（repositoryがdict/数値で返す）。
+# ===========================================================================
+with tab_view:
+    st.caption(
+        "取込済みの集計データから応答率を閲覧します（CSVの再アップロードは不要）。"
+        "期間・業務名・回線（skill_group）・秒数閾値を選ぶと、保存済みの中間集計を合算して計算します。"
+    )
+
+    with service_scope() as container:
+        v_has_data = container.answer_rate_threshold_repository.has_data()
+        v_min, v_max = container.answer_rate_threshold_repository.stat_date_range()
+
+    if not v_has_data or v_min is None:
+        st.info(
+            "閲覧できる集計データがありません。『CDR取込』タブでCSVを取り込むと、"
+            "0/3/10/20/30秒の中間集計（answer_rate_threshold_stats）が保存され、ここで閲覧できるようになります。"
+        )
+    else:
+        # 1. 対象期間
+        pc1, pc2 = st.columns(2)
+        view_start = pc1.date_input(
+            "対象期間 開始（stat_date）", value=v_min, min_value=v_min, max_value=v_max, key="view_start"
+        )
+        view_end = pc2.date_input(
+            "対象期間 終了（stat_date）", value=v_max, min_value=v_min, max_value=v_max, key="view_end"
+        )
+        if view_start > view_end:
+            st.warning("対象期間の開始日は終了日以前にしてください。")
+        else:
+            # 期間内に存在する回線と、業務名（合算ラベル）を取得
+            with service_scope() as container:
+                available_lines = container.answer_rate_threshold_repository.list_skill_groups(
+                    view_start, view_end
+                )
+                merges_all = container.answer_rate_master_service.list_skill_group_merge()
+            active_merges = [m for m in merges_all if m["is_active"]]
+            merge_labels = sorted({m["merge_label"] for m in active_merges})
+
+            # 2. 業務名（合算ラベル）。選ぶと配下の skill_group を回線選択の初期値にする。
+            label_choice = st.selectbox(
+                "業務名（合算ラベル skill_group_merge から選択。配下の回線が下の選択に入ります）",
+                options=["（指定なし）"] + merge_labels,
+                key="view_label_choice",
+            )
+            default_lines = [
+                m["child_skill_group"]
+                for m in active_merges
+                if m["merge_label"] == label_choice and m["child_skill_group"] in available_lines
+            ]
+            if label_choice != "（指定なし）" and not default_lines:
+                st.caption(
+                    f"※ 業務名『{label_choice}』配下の回線は、対象期間の集計データに含まれていません。"
+                )
+
+            # 3/4. 回線（skill_group）の複数選択（業務名の配下を初期値、直接選択も可）
+            selected_lines = st.multiselect(
+                f"回線（skill_group）を選択　全 {len(available_lines)} 件（入力して検索できます）",
+                options=available_lines,
+                default=default_lines,
+                key="view_lines",
+            )
+
+            # 5. 秒数閾値
+            threshold_sel = st.selectbox(
+                "秒数閾値",
+                options=list(ar.COMPARE_THRESHOLDS),
+                index=0,
+                format_func=lambda t: f"{t}秒",
+                key="view_threshold",
+            )
+
+            if not selected_lines:
+                st.info("回線（skill_group）を1件以上選択してください（業務名を選ぶと自動で入ります）。")
+            else:
+                with service_scope() as container:
+                    agg = container.answer_rate_threshold_repository.aggregate_selected(
+                        view_start, view_end, selected_lines, threshold_sel
+                    )
+                    cmp_rows = container.answer_rate_threshold_repository.compare_selected(
+                        view_start, view_end, selected_lines
+                    )
+                completed = agg["completed_count"]
+                valid_abandon = agg["valid_abandon_count"]
+                denom = completed + valid_abandon
+                rate = ar.answer_rate(completed, valid_abandon)
+
+                # 6. 選択結果を大きく表示
+                st.markdown(
+                    f"#### 選択結果：{threshold_sel}秒 / 対象期間 {view_start} 〜 {view_end} / "
+                    f"選択回線 {len(selected_lines)} 件"
+                )
+                b1, b2, b3, b4, b5 = st.columns(5)
+                b1.metric("応答率", f"{rate:.1f}%")
+                b2.metric("完了呼", f"{completed:,}")
+                b3.metric("有効放棄呼", f"{valid_abandon:,}")
+                b4.metric("分母(完了+有効放棄)", f"{denom:,}")
+                b5.metric("選択回線数", f"{len(selected_lines):,}")
+
+                if denom == 0:
+                    st.warning("選択回線・期間・閾値に該当する集計がありません（完了呼・有効放棄呼が0）。")
+
+                # 7. 0/3/10/20/30秒の比較表（同じ回線群・同じ期間。0秒基準の差分付き）
+                st.markdown("**選択回線群の閾値比較（0/3/10/20/30秒）**")
+                by_threshold = {r["threshold_seconds"]: r for r in cmp_rows}
+                cmp_view = []
+                baseline_rate = None
+                baseline_abandon = None
+                for t in ar.COMPARE_THRESHOLDS:
+                    r = by_threshold.get(t, {"completed_count": 0, "valid_abandon_count": 0})
+                    c = r["completed_count"]
+                    va = r["valid_abandon_count"]
+                    d = c + va
+                    rt = ar.answer_rate(c, va)
+                    if t == 0:
+                        baseline_rate = rt
+                        baseline_abandon = va
+                    cmp_view.append(
+                        {
+                            "閾値(秒)": t,
+                            "完了呼": c,
+                            "有効放棄呼": va,
+                            "分母(完了+有効放棄)": d,
+                            "応答率(%)": rt,
+                            "応答率差分(0秒比)": (
+                                round(rt - baseline_rate, 1) if baseline_rate is not None else 0.0
+                            ),
+                            "有効放棄差分(0秒比)": (
+                                va - baseline_abandon if baseline_abandon is not None else 0
+                            ),
+                        }
+                    )
+                st.dataframe(cmp_view, use_container_width=True, hide_index=True)
+                cmp_csv = pd.DataFrame(cmp_view).to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "閾値比較表をCSVダウンロード",
+                    data=cmp_csv,
+                    file_name="view_threshold_comparison.csv",
+                    mime="text/csv",
+                    key="view_compare_dl",
+                )
+                st.caption(
+                    "比較表は同じ回線群・同じ対象期間の0/3/10/20/30秒応答率です。"
+                    "合算値は保存しておらず、選択回線の集計値を都度合算して計算しています。"
+                )
