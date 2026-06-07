@@ -328,6 +328,106 @@ def build_threshold_summary_by_skill_group(df: pd.DataFrame, mapping: dict, excl
     return rows
 
 
+def build_threshold_stats(df: pd.DataFrame, mapping: dict, exclude_set: set,
+                          thresholds=COMPARE_THRESHOLDS) -> list[dict]:
+    """閲覧用の中間集計を (stat_date, time_slot, skill_group, threshold_seconds) 粒度で構築する。
+
+    answer_rate_threshold_stats に保存するための集計済みデータ（生CSV・個別明細は保存しない）。
+    前処理・呼損判定・秒数ルールは aggregate / build_threshold_summary_by_skill_group と同一定義
+    （閾値だけを差し替える。応答率の分子分母の定義は変えない）。
+
+    完了呼は閾値に依存しないため (date,slot,sg) 単位で1度だけ数え、放棄呼のみ閾値ごとに数える。
+    完了も有効放棄も0の (date,slot,sg,threshold) は応答率の意味を持たないため出力しない。
+
+    戻り値は list[dict]（ORM非使用）:
+        {stat_date, time_slot, skill_group, threshold_seconds,
+         completed_count, valid_abandon_count, denominator, answer_rate}
+
+    NOTE（大容量CSV対策・今回はpandasベース）:
+        250MB級でメモリが厳しい場合は chunksize 読込で (date,slot,sg) 別の
+        「完了数」「閾値ごとの経過秒>閾値の放棄数」を逐次加算する方式へ置換可能。
+        さらに高速・低メモリが必要なら DuckDB / Polars でも同じ集計が可能。
+        いずれも応答率の計算定義は変更しないこと。
+    """
+    m = mapping
+    work = pd.DataFrame(
+        {
+            "skill_group": df[m["skill_group"]].astype(str),
+            "caller_number": df[m["caller_number"]].astype(str).str.strip(),
+            "completed": pd.to_numeric(df[m["completed"]], errors="coerce").fillna(0).astype(int),
+            "abandoned": pd.to_numeric(df[m["abandoned"]], errors="coerce").fillna(0).astype(int),
+            "outbound": pd.to_numeric(df[m["outbound"]], errors="coerce").fillna(0).astype(int),
+            "inbound_time": pd.to_datetime(df[m["inbound_time"]], errors="coerce"),
+            "disconnect_time": pd.to_datetime(df[m["disconnect_time"]], errors="coerce"),
+        }
+    )
+    work = work[work["outbound"] != 1]
+    if exclude_set:
+        work = work[~work["caller_number"].isin(exclude_set)]
+    work = work[work["inbound_time"].notna()].copy()
+    work["stat_date"] = work["inbound_time"].dt.date
+    work["time_slot"] = work["inbound_time"].dt.hour
+    work["elapsed_sec"] = (work["disconnect_time"] - work["inbound_time"]).dt.total_seconds()
+
+    keys = ["stat_date", "time_slot", "skill_group"]
+    completed_by_key = work.loc[work["completed"] == 1].groupby(keys).size()
+    abandon = work.loc[work["abandoned"] == 1, keys + ["elapsed_sec"]]
+
+    rows = []
+    for t in thresholds:
+        ab_t = abandon.loc[abandon["elapsed_sec"] > t].groupby(keys).size()
+        all_keys = set(completed_by_key.index).union(set(ab_t.index))
+        for key in all_keys:
+            stat_date, time_slot, skill_group = key
+            completed = int(completed_by_key.get(key, 0))
+            valid_abandon = int(ab_t.get(key, 0))
+            denom = completed + valid_abandon
+            if denom == 0:
+                continue
+            rows.append(
+                {
+                    "stat_date": stat_date,
+                    "time_slot": int(time_slot),
+                    "skill_group": str(skill_group),
+                    "threshold_seconds": int(t),
+                    "completed_count": completed,
+                    "valid_abandon_count": valid_abandon,
+                    "denominator": denom,
+                    "answer_rate": answer_rate(completed, valid_abandon),
+                }
+            )
+    return rows
+
+
+def rollup_threshold_stats_by_skill_group(threshold_stats: list[dict]) -> list[dict]:
+    """build_threshold_stats の結果 (date,slot,sg,threshold 粒度) を
+    (skill_group, threshold_seconds) 粒度へ畳み込む（生CSVを再走査せずに導出する）。
+
+    戻り値は build_threshold_summary_by_skill_group と同じ形（選択式集計パネルで使う）。
+    """
+    acc: dict[tuple, dict] = {}
+    for r in threshold_stats:
+        k = (str(r["skill_group"]), int(r["threshold_seconds"]))
+        bucket = acc.setdefault(k, {"completed_count": 0, "valid_abandon_count": 0})
+        bucket["completed_count"] += r["completed_count"]
+        bucket["valid_abandon_count"] += r["valid_abandon_count"]
+    rows = []
+    for (sg, t), v in acc.items():
+        completed = v["completed_count"]
+        valid_abandon = v["valid_abandon_count"]
+        rows.append(
+            {
+                "skill_group": sg,
+                "threshold_seconds": t,
+                "completed_count": completed,
+                "valid_abandon_count": valid_abandon,
+                "denominator": completed + valid_abandon,
+                "answer_rate": answer_rate(completed, valid_abandon),
+            }
+        )
+    return sorted(rows, key=lambda r: (r["skill_group"], r["threshold_seconds"]))
+
+
 def summarize_selected_lines(summary_rows: list[dict], skill_groups, threshold_seconds: int) -> dict:
     """中間集計（build_threshold_summary_by_skill_group の結果）から、選択回線群×指定閾値の
     全体応答率を合算して返す純粋関数（DB非保存・生CSV非走査）。"""

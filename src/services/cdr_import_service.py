@@ -27,9 +27,10 @@ class CdrImportService:
     ENCODINGS_TRY = ["utf-8-sig", "cp932"]
 
     def __init__(self, call_stats_repository, answer_rate_master_repository, audit_service=None,
-                 quarantine_dir: str = "uploads/quarantine"):
+                 quarantine_dir: str = "uploads/quarantine", threshold_repository=None):
         self.call_stats_repository = call_stats_repository
         self.master_repository = answer_rate_master_repository
+        self.threshold_repository = threshold_repository
         self.audit_service = audit_service
         self.quarantine_dir = quarantine_dir
 
@@ -105,10 +106,13 @@ class CdrImportService:
         keys = [(s["stat_date"], s["time_slot"], s["skill_group"]) for s in stats]
         collisions = self.call_stats_repository.exists_for_keys(keys)
 
-        # 中間集計（skill_group × threshold_seconds）を1度だけ構築する（大容量CSV対策）。
-        # 以降のUI選択（回線複数選択・閾値選択）はこの中間集計を合算して計算し、生CSVを再走査しない。
-        # 保存済みデータの有無に関係なくプレビューで提示する（参考値・DB非保存）。
-        sg_threshold_summary = ar.build_threshold_summary_by_skill_group(df, mapping, snapshots["exclude_set"])
+        # 閲覧用の中間集計（stat_date × time_slot × skill_group × threshold）を1度だけ構築する。
+        # これを answer_rate_threshold_stats に保存し、以降は生CSVを再走査せず閲覧する（大容量CSV対策）。
+        threshold_stats = ar.build_threshold_stats(df, mapping, snapshots["exclude_set"])
+
+        # 選択式集計パネル用の skill_group × threshold 中間集計は、上記から畳み込んで導出する
+        # （生CSVの再走査を避ける）。保存済みデータの有無に関係なくプレビューで提示する（参考値）。
+        sg_threshold_summary = ar.rollup_threshold_stats_by_skill_group(threshold_stats)
         all_skill_groups = sorted({r["skill_group"] for r in sg_threshold_summary})
         # 全体比較は中間集計の全回線合算として導出（compare_thresholds の df 再走査を避ける）。
         threshold_comparison = ar.compare_selected_lines(sg_threshold_summary, all_skill_groups)
@@ -122,6 +126,7 @@ class CdrImportService:
             "collisions": collisions,
             "threshold_comparison": threshold_comparison,
             "skill_group_threshold_summary": sg_threshold_summary,
+            "threshold_stats": threshold_stats,
             "skill_groups": all_skill_groups,
             "threshold_rule_snapshot_json": snapshots["threshold_rules"],
             "exclude_numbers_snapshot_hash": snapshots["exclude_hash"],
@@ -150,6 +155,16 @@ class CdrImportService:
             raise CdrImportError(msg)
 
         inserted = self.call_stats_repository.bulk_insert_stats(prepared["stats"])
+
+        # 閲覧用の中間集計（0/3/10/20/30秒）も保存する。call_stats（正式閾値用）とは別テーブル。
+        # 集計済みデータのみ保存し、生CSV・個別明細は保存しない。
+        inserted_threshold = 0
+        if self.threshold_repository is not None:
+            inserted_threshold = self.threshold_repository.bulk_insert(
+                prepared.get("threshold_stats") or [],
+                source_filename=prepared["filename"],
+            )
+
         log = ImportLog(
             filename=prepared["filename"],
             encoding=prepared["encoding"],
@@ -165,24 +180,33 @@ class CdrImportService:
         self.call_stats_repository.create_import_log(log)
         if self.audit_service:
             self.audit_service.log("import_log", log.id, "create", actor_id, after=log)
-        return {"inserted_stat_rows": inserted, "import_log_id": log.id}
+        return {
+            "inserted_stat_rows": inserted,
+            "inserted_threshold_rows": inserted_threshold,
+            "import_log_id": log.id,
+        }
 
     # ------------------------------------------------------------------
     # 取込済み集計の削除（再取込用）
     # ------------------------------------------------------------------
     def delete_call_stats_range(self, start, end, actor_id: int, note: str | None = None) -> dict:
-        """[start, end]（両端含む）の call_stats を削除し、操作を import_log に残す。
+        """[start, end]（両端含む）の call_stats と answer_rate_threshold_stats を削除し、
+        操作を import_log に残す。
 
         用途: abandon_rules の秒数閾値を変更した後、既存の集計（0秒既定など）を削除し、
         同じCSVを再取込できるようにする。
-        - 削除対象は raw skill_group の call_stats のみ（合算値は元々非保存のため対象外）。
+        - 削除対象は raw skill_group の call_stats（正式閾値用）と
+          answer_rate_threshold_stats（閲覧用の0/3/10/20/30秒中間集計）の両方。合算値は元々非保存。
         - DBスキーマは変更しない。call_stats と import_log を結ぶFKは無いため、
           削除は import_log 単位ではなく stat_date 範囲で行う（呼び出し側で範囲を指定する）。
         - 操作監査として import_log に status="deleted" の行を1件残す（スキーマ変更不要）。
         """
         deleted = self.call_stats_repository.delete_stats_in_range(start, end)
+        deleted_threshold = 0
+        if self.threshold_repository is not None:
+            deleted_threshold = self.threshold_repository.delete_in_range(start, end)
         log = ImportLog(
-            filename=f"[call_stats削除] {start}〜{end}",
+            filename=f"[集計削除] {start}〜{end}",
             encoding=None,
             row_count=deleted,
             status="deleted",
@@ -192,14 +216,22 @@ class CdrImportService:
             exclude_numbers_snapshot_hash=None,
             definition_note=(
                 note
-                or f"再取込のため call_stats {deleted}行を削除（{start}〜{end} / raw skill_groupのみ・合算値は非保存）。"
+                or (
+                    f"再取込のため削除（{start}〜{end}）: "
+                    f"call_stats {deleted}行 / answer_rate_threshold_stats {deleted_threshold}行"
+                    "（raw skill_groupのみ・合算値は非保存）。"
+                )
             ),
             error_message=None,
         )
         self.call_stats_repository.create_import_log(log)
         if self.audit_service:
             self.audit_service.log("import_log", log.id, "delete_call_stats", actor_id, after=log)
-        return {"deleted_rows": deleted, "import_log_id": log.id}
+        return {
+            "deleted_rows": deleted,
+            "deleted_threshold_rows": deleted_threshold,
+            "import_log_id": log.id,
+        }
 
     # ------------------------------------------------------------------
     # 失敗時の退避・記録
