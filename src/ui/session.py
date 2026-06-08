@@ -18,6 +18,7 @@ NAV_ITEMS = [
     ("\u547c\u8a73\u7d30\u4f5c\u6210", "pages/07_\u547c\u8a73\u7d30\u4f5c\u6210.py"),
     ("\u6253\u523b\u7167\u5408", "pages/08_\u6253\u523b\u7167\u5408.py"),
     ("\u901a\u8a71\u9332\u97f3", "pages/09_\u901a\u8a71\u9332\u97f3.py"),
+    ("CT-e1\u81ea\u52d5\u5316", "pages/10_CT-e1\u81ea\u52d5\u5316.py"),
     ("\u7ba1\u7406", "pages/99_\u7ba1\u7406.py"),
 ]
 
