@@ -44,6 +44,22 @@ class AnswerRateMasterRepository:
     def get_skill_group_merge(self, id_: int) -> SkillGroupMerge | None:
         return self.session.get(SkillGroupMerge, id_)
 
+    def list_skill_group_merge_by_label(self, merge_label: str, active_only: bool = False) -> list[SkillGroupMerge]:
+        """指定 merge_label に紐づく行を返す（child_skill_group 昇順）。"""
+        stmt = select(SkillGroupMerge).where(SkillGroupMerge.merge_label == merge_label)
+        if active_only:
+            stmt = stmt.where(SkillGroupMerge.is_active.is_(True))
+        return list(self.session.scalars(stmt.order_by(SkillGroupMerge.child_skill_group)).all())
+
+    def get_skill_group_merge_pair(self, merge_label: str, child_skill_group: str) -> SkillGroupMerge | None:
+        """(merge_label, child_skill_group) の組に一致する1行を返す（無ければ None）。"""
+        return self.session.scalar(
+            select(SkillGroupMerge).where(
+                SkillGroupMerge.merge_label == merge_label,
+                SkillGroupMerge.child_skill_group == child_skill_group,
+            )
+        )
+
     # --- operators ---
     def list_operators(self, active_only: bool = False) -> list[Operator]:
         stmt = select(Operator)
