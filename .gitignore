@@ -6,6 +6,7 @@
 multimulti_os.db-wal
 multimulti_os.db-shm
 uploads/
+data/ct_e1/
 __pycache__/
 *.pyc
 Thumbs.db
