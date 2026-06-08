@@ -190,6 +190,128 @@ class AnswerRateMasterService:
             "error_details": error_details,
         }
 
+    # --- 業務グループ編集（配下回線の追加・除外） ---
+    def list_merge_labels(self, filter_text: str = "") -> list[str]:
+        """merge_label の一覧（重複なし）。filter_text を含むものだけ、active優先で返す。
+
+        並び: 有効行を持つラベルを先、その後に無効のみのラベル。各群はラベル昇順。
+        """
+        ft = (filter_text or "").strip().lower()
+        active_labels = set()
+        all_labels = set()
+        for m in self.repo.list_skill_group_merge(active_only=False):
+            all_labels.add(m.merge_label)
+            if m.is_active:
+                active_labels.add(m.merge_label)
+        if ft:
+            all_labels = {lbl for lbl in all_labels if ft in lbl.lower()}
+        active = sorted(lbl for lbl in all_labels if lbl in active_labels)
+        inactive_only = sorted(lbl for lbl in all_labels if lbl not in active_labels)
+        return active + inactive_only
+
+    def get_skill_group_merge_children(self, merge_label: str, include_inactive: bool = False) -> list[dict]:
+        """指定 merge_label 配下の回線を list[dict] で返す（UI層へORMは渡さない）。
+
+        列: id, child_skill_group, is_active, created_at, updated_at。
+        include_inactive=False のときは is_active=1 のみ。
+        """
+        rows = []
+        for m in self.repo.list_skill_group_merge_by_label(merge_label, active_only=False):
+            if not include_inactive and not m.is_active:
+                continue
+            rows.append(
+                {
+                    "id": m.id,
+                    "child_skill_group": m.child_skill_group,
+                    "is_active": bool(m.is_active),
+                    "created_at": str(m.created_at) if m.created_at is not None else "",
+                    "updated_at": str(m.updated_at) if m.updated_at is not None else "",
+                }
+            )
+        return rows
+
+    def search_child_skill_groups(self, skill_groups, keyword: str, merge_label: str,
+                                  only_unregistered: bool = True, limit: int = 100) -> list[dict]:
+        """追加候補の回線を検索する（全件ドロップダウンを避けるための絞り込み）。
+
+        - skill_groups: 取込済み skill_group の全集合（UIから渡す）。
+        - keyword を含む回線のみ（大文字小文字無視）。
+        - only_unregistered=True なら、対象グループに「有効登録済み」の回線は候補から除く。
+        - 最大 limit 件に制限。
+        戻り値: list[dict]（{child_skill_group, already_inactive}）。
+          already_inactive=True は「そのグループに無効状態で存在（追加すると再有効化）」。
+        """
+        kw = (keyword or "").strip().lower()
+        if not kw:
+            return []
+        existing = {m.child_skill_group: m for m in self.repo.list_skill_group_merge_by_label(merge_label, active_only=False)}
+        active_children = {c for c, m in existing.items() if m.is_active}
+
+        rows = []
+        for sg in sorted({str(x) for x in skill_groups}):
+            if kw not in sg.lower():
+                continue
+            if only_unregistered and sg in active_children:
+                continue  # 既に有効登録済みは候補から外す
+            rows.append({"child_skill_group": sg, "already_inactive": sg in existing and not existing[sg].is_active})
+            if len(rows) >= limit:
+                break
+        return rows
+
+    def add_child_skill_groups_to_merge(self, actor_id: int, merge_label: str, child_skill_groups) -> dict:
+        """回線を業務グループに追加する（重複処理つき・物理削除なし）。
+
+        - 未存在: 新規INSERT（is_active=1）
+        - 存在 & is_active=0: is_active=1 へ再有効化（updated_at更新）
+        - 存在 & is_active=1: スキップ
+        戻り値: {added, reactivated, skipped, label}（UI層へORMは渡さない）。
+        """
+        label = (merge_label or "").strip()
+        if not label:
+            raise ValueError("業務グループ名（親ラベル）を指定してください。")
+        children = []
+        seen = set()
+        for c in child_skill_groups:
+            cc = str(c).strip()
+            if cc and cc not in seen:
+                seen.add(cc)
+                children.append(cc)
+        if not children:
+            raise ValueError("追加する回線を1件以上選択してください。")
+
+        added = reactivated = skipped = 0
+        for child in children:
+            existing = self.repo.get_skill_group_merge_pair(label, child)
+            if existing is None:
+                obj = SkillGroupMerge(merge_label=label, child_skill_group=child, is_active=True)
+                self.repo.add(obj)
+                self._audit("skill_group_merge", obj.id, "create", actor_id, after=obj)
+                added += 1
+            elif not existing.is_active:
+                existing.is_active = True
+                self.repo.add(existing)
+                self._audit("skill_group_merge", existing.id, "update", actor_id, after=existing)
+                reactivated += 1
+            else:
+                skipped += 1
+        return {"added": added, "reactivated": reactivated, "skipped": skipped, "label": label}
+
+    def deactivate_child_skill_groups_from_merge(self, actor_id: int, merge_label: str, child_skill_groups) -> int:
+        """回線を業務グループから外す（is_active=0 へ更新。物理削除はしない）。戻り値は更新件数。"""
+        label = (merge_label or "").strip()
+        targets = {str(c).strip() for c in child_skill_groups if str(c).strip()}
+        if not label or not targets:
+            return 0
+        deactivated = 0
+        for child in targets:
+            existing = self.repo.get_skill_group_merge_pair(label, child)
+            if existing is not None and existing.is_active:
+                existing.is_active = False
+                self.repo.add(existing)
+                self._audit("skill_group_merge", existing.id, "update", actor_id, after=existing)
+                deactivated += 1
+        return deactivated
+
     def create_skill_group_merge(self, actor_id: int, merge_label: str, child_skill_group: str):
         obj = SkillGroupMerge(
             merge_label=merge_label.strip(),

@@ -520,6 +520,134 @@ with st.container(border=True):
         else:
             st.caption("まだ業務グループ定義がありません。")
 
+# --- 業務グループ編集（既存グループの配下回線を追加・除外） ---
+st.subheader("業務グループ編集（配下回線の追加・除外）")
+with st.container(border=True):
+    st.caption(
+        "既存の業務グループを選び、配下の回線だけを見ながら追加・除外します。"
+        "外す操作は物理削除せず is_active=0 にします（DBからは消えません）。"
+    )
+
+    ge_filter = st.text_input("業務グループ名で絞り込み", key="ge_label_filter", placeholder="例: 弁護士")
+    with service_scope() as container:
+        ge_labels = container.answer_rate_master_service.list_merge_labels(ge_filter)
+
+    if not ge_labels:
+        st.info("該当する業務グループがありません。『合算定義』または『業務グループ候補』から登録してください。")
+    else:
+        ge_label = st.selectbox(
+            f"編集する業務グループ（{len(ge_labels)} 件中）",
+            options=ge_labels,
+            key="ge_label_select",
+        )
+        ge_incl_inactive = st.checkbox("無効行も表示", value=False, key="ge_incl_inactive")
+
+        with service_scope() as container:
+            ge_children = container.answer_rate_master_service.get_skill_group_merge_children(
+                ge_label, include_inactive=ge_incl_inactive
+            )
+        active_count = sum(1 for r in ge_children if r["is_active"])
+        st.markdown(f"**現在の登録回線**：有効 {active_count} 件 / 表示 {len(ge_children)} 件")
+
+        # --- 現在の登録回線（外すチェック付き） ---
+        if ge_children:
+            remove_df = pd.DataFrame(
+                [
+                    {
+                        "外す": False,
+                        "child_skill_group": r["child_skill_group"],
+                        "is_active": r["is_active"],
+                        "created_at": r["created_at"],
+                        "updated_at": r["updated_at"],
+                    }
+                    for r in ge_children
+                ]
+            )
+            edited_remove = st.data_editor(
+                remove_df,
+                use_container_width=True,
+                hide_index=True,
+                disabled=["child_skill_group", "is_active", "created_at", "updated_at"],
+                column_config={"外す": st.column_config.CheckboxColumn("外す", help="このグループから外す回線")},
+                key="ge_remove_editor",
+            )
+            to_remove = [
+                row["child_skill_group"]
+                for _, row in edited_remove.iterrows()
+                if bool(row["外す"]) and bool(row["is_active"])
+            ]
+            if st.button(
+                f"選択した回線をこのグループから外す（{len(to_remove)} 件）",
+                key="ge_remove_btn",
+                disabled=not to_remove,
+            ):
+                with service_scope() as container:
+                    n = container.answer_rate_master_service.deactivate_child_skill_groups_from_merge(
+                        user["user_id"], ge_label, to_remove
+                    )
+                st.success(f"{n} 件をグループ『{ge_label}』から外しました（is_active=0／物理削除なし）。")
+                st.rerun()
+        else:
+            st.caption("このグループには表示できる回線がありません（無効行は『無効行も表示』で確認できます）。")
+
+        st.divider()
+
+        # --- 回線追加（検索して候補から選ぶ。全件ドロップダウンは使わない） ---
+        st.markdown("**回線を追加**")
+        ge_add_kw = st.text_input("追加する回線を検索（キーワード）", key="ge_add_kw", placeholder="例: 弁護士ドットコム 横浜")
+        ge_only_unreg = st.checkbox(
+            "このグループに未登録の回線だけ表示", value=True, key="ge_only_unreg"
+        )
+        if not ge_add_kw.strip():
+            st.caption("キーワードを入力すると、一致する回線（最大100件）を候補表示します。")
+        else:
+            with service_scope() as container:
+                ge_cands = container.answer_rate_master_service.search_child_skill_groups(
+                    skill_group_options, ge_add_kw, ge_label, only_unregistered=ge_only_unreg, limit=100
+                )
+            if not ge_cands:
+                st.info("一致する追加候補がありません（既に有効登録済みか、キーワード不一致）。")
+            else:
+                st.caption(f"追加候補 {len(ge_cands)} 件（最大100件まで表示）")
+                add_df = pd.DataFrame(
+                    [
+                        {
+                            "追加": False,
+                            "child_skill_group": r["child_skill_group"],
+                            "状態": "無効で存在（追加で再有効化）" if r["already_inactive"] else "未登録",
+                        }
+                        for r in ge_cands
+                    ]
+                )
+                edited_add = st.data_editor(
+                    add_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    disabled=["child_skill_group", "状態"],
+                    column_config={"追加": st.column_config.CheckboxColumn("追加", help="このグループに追加する回線")},
+                    key="ge_add_editor",
+                )
+                to_add = [
+                    row["child_skill_group"]
+                    for _, row in edited_add.iterrows()
+                    if bool(row["追加"])
+                ]
+                if st.button(
+                    f"選択した回線をこのグループに追加（{len(to_add)} 件）",
+                    type="primary",
+                    key="ge_add_btn",
+                    disabled=not to_add,
+                ):
+                    with service_scope() as container:
+                        res = container.answer_rate_master_service.add_child_skill_groups_to_merge(
+                            user["user_id"], ge_label, to_add
+                        )
+                    st.success(
+                        f"グループ『{res['label']}』へ 新規追加 {res['added']} 件 / "
+                        f"再有効化 {res['reactivated']} 件 / 重複スキップ {res['skipped']} 件。"
+                    )
+                    st.rerun()
+
 # --- 業務グループ定義のバックアップ（エクスポート / インポート） ---
 st.subheader("業務グループ定義のバックアップ（CSVエクスポート / インポート）")
 with st.container(border=True):
