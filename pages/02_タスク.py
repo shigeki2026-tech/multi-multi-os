@@ -232,6 +232,7 @@ if panel_col:
                 with st.form("create_task_form", clear_on_submit=True):
                     top = st.columns([1.4, 0.8])
                     top[0].markdown("### 新規タスク")
+                    top[1].markdown("<div class='secondary-button-marker'></div>", unsafe_allow_html=True)
                     close_create = top[1].form_submit_button("閉じる")
 
                     title = st.text_input("件名")
@@ -323,7 +324,9 @@ if panel_col:
                 with st.form("edit_task_form"):
                     action = st.columns(3)
                     save_clicked = action[0].form_submit_button("保存", type="primary")
+                    action[1].markdown("<div class='success-button-marker'></div>", unsafe_allow_html=True)
                     complete_clicked = action[1].form_submit_button("完了")
+                    action[2].markdown("<div class='secondary-button-marker'></div>", unsafe_allow_html=True)
                     cancel_clicked = action[2].form_submit_button("キャンセル")
 
                     title = st.text_input("件名", value=detail["title"])
