@@ -8,18 +8,18 @@ from src.ui.bootstrap import ensure_app_ready
 
 
 NAV_ITEMS = [
-    ("\u30db\u30fc\u30e0", "app.py"),
-    ("\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9", "pages/01_\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9.py"),
-    ("\u30bf\u30b9\u30af", "pages/02_\u30bf\u30b9\u30af.py"),
-    ("SV\u4f9d\u983c", "pages/03_SV\u4f9d\u983c.py"),
-    ("\u30ab\u30ec\u30f3\u30c0\u30fc", "pages/04_\u30ab\u30ec\u30f3\u30c0\u30fc.py"),
-    ("\u5fdc\u7b54\u7387\u901f\u5831", "pages/05_\u5fdc\u7b54\u7387\u901f\u5831.py"),
-    ("\u65e5\u5831\u4f5c\u6210", "pages/06_\u65e5\u5831\u4f5c\u6210.py"),
-    ("\u547c\u8a73\u7d30\u4f5c\u6210", "pages/07_\u547c\u8a73\u7d30\u4f5c\u6210.py"),
-    ("\u6253\u523b\u7167\u5408", "pages/08_\u6253\u523b\u7167\u5408.py"),
-    ("\u901a\u8a71\u9332\u97f3", "pages/09_\u901a\u8a71\u9332\u97f3.py"),
-    ("CT-e1\u81ea\u52d5\u5316", "pages/10_CT-e1\u81ea\u52d5\u5316.py"),
-    ("\u7ba1\u7406", "pages/99_\u7ba1\u7406.py"),
+    ("ホーム", "app.py"),
+    ("ダッシュボード", "pages/01_ダッシュボード.py"),
+    ("タスク", "pages/02_タスク.py"),
+    ("SV依頼", "pages/03_SV依頼.py"),
+    ("カレンダー", "pages/04_カレンダー.py"),
+    ("応答率速報", "pages/05_応答率速報.py"),
+    ("日報作成", "pages/06_日報作成.py"),
+    ("呼詳細作成", "pages/07_呼詳細作成.py"),
+    ("打刻照合", "pages/08_打刻照合.py"),
+    ("通話録音", "pages/09_通話録音.py"),
+    ("CT-e1自動化", "pages/10_CT-e1自動化.py"),
+    ("管理", "pages/99_管理.py"),
 ]
 
 
@@ -45,23 +45,23 @@ def ensure_logged_in():
     left, center, right = st.columns([1.1, 1.4, 1.1])
     with center:
         with st.container(border=True):
-            st.subheader("\u30ed\u30b0\u30a4\u30f3")
-            st.caption("\u5229\u7528\u3059\u308b\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+            st.subheader("ログイン")
+            st.caption("利用するユーザーを選択してください。")
             users = _list_users()
             selected = st.selectbox(
-                "\u30e6\u30fc\u30b6\u30fc\u9078\u629e",
+                "ユーザー選択",
                 options=users,
                 format_func=lambda item: item["label"],
                 index=None,
-                placeholder="\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e",
+                placeholder="ユーザーを選択",
             )
-            if st.button("\u30ed\u30b0\u30a4\u30f3", type="primary"):
+            if st.button("ログイン", type="primary"):
                 if selected:
                     st.session_state["current_user"] = _login_user(selected["value"])
                     _set_login_query_params(selected["value"])
                     st.session_state.pop("current_user_id", None)
                     st.rerun()
-                st.warning("\u30e6\u30fc\u30b6\u30fc\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+                st.warning("ユーザーを選択してください。")
     st.stop()
 
 
@@ -98,28 +98,28 @@ def logout():
 def ensure_admin(user=None):
     current_user = user or get_current_user()
     if not current_user or current_user.get("role") != "admin":
-        st.error("\u3053\u306e\u753b\u9762\u306f admin \u30ed\u30fc\u30eb\u306e\u307f\u5229\u7528\u3067\u304d\u307e\u3059\u3002")
+        st.error("この画面は admin ロールのみ利用できます。")
         st.stop()
 
 
 def render_sidebar(user: dict):
     _apply_layout_style()
     with st.sidebar:
-        st.markdown("### \u30de\u30eb\u30c1\u30de\u30eb\u30c1OS")
+        st.markdown("### マルチマルチ管理メニュー")
         with st.container(border=True):
             st.markdown(f"**{user['display_name']}**")
             role_color = "#2563EB" if user["role"] == "admin" else "#64748B"
             st.markdown(badge(user["role"], role_color), unsafe_allow_html=True)
-            st.caption(user["team_name"] or "\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a")
+            st.caption(user["team_name"] or "チーム未設定")
 
         st.divider()
         for label, page in NAV_ITEMS:
-            if label == "\u7ba1\u7406" and user.get("role") != "admin":
+            if label == "管理" and user.get("role") != "admin":
                 continue
             st.page_link(page, label=label)
 
         st.markdown("<div class='sidebar-footer-space'></div>", unsafe_allow_html=True)
-        if st.button("\u30ed\u30b0\u30a2\u30a6\u30c8", key="sidebar_logout"):
+        if st.button("ログアウト", key="sidebar_logout"):
             logout()
             st.rerun()
 
@@ -190,14 +190,15 @@ def _apply_layout_style():
             width: auto !important;
             min-width: 96px;
             border-radius: 10px;
-            border: 1px solid #CBD5E1;
-            background: #FFFFFF;
-            color: #111827;
+            border: 1px solid #2563EB;
+            background: #2563EB;
+            color: #FFFFFF;
             box-shadow: none;
         }
         .stFormSubmitButton button:hover {
-            border-color: #94A3B8;
-            color: #111827;
+            background: #1D4ED8;
+            border-color: #1D4ED8;
+            color: #FFFFFF;
         }
         .stButton button[kind="primary"] {
             background: #2563EB;
@@ -209,12 +210,14 @@ def _apply_layout_style():
             border-color: #1D4ED8;
             color: #FFFFFF;
         }
-        .stFormSubmitButton button[kind="primary"] {
+        .stFormSubmitButton button[kind="primary"],
+        .stFormSubmitButton button[kind="primaryFormSubmit"] {
             background: #2563EB !important;
             color: #FFFFFF !important;
             border-color: #2563EB !important;
         }
-        .stFormSubmitButton button[kind="primary"]:hover {
+        .stFormSubmitButton button[kind="primary"]:hover,
+        .stFormSubmitButton button[kind="primaryFormSubmit"]:hover {
             background: #1D4ED8 !important;
             border-color: #1D4ED8 !important;
             color: #FFFFFF !important;
@@ -223,6 +226,18 @@ def _apply_layout_style():
             background: #374151;
             color: #F9FAFB;
             border-color: #4B5563;
+        }
+        .element-container:has(.secondary-button-marker) + div .stButton button,
+        .element-container:has(.secondary-button-marker) + div .stFormSubmitButton button {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+            border-color: #CBD5E1 !important;
+        }
+        .element-container:has(.secondary-button-marker) + div .stButton button:hover,
+        .element-container:has(.secondary-button-marker) + div .stFormSubmitButton button:hover {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+            border-color: #94A3B8 !important;
         }
         .element-container:has(.success-button-marker) + div .stButton button,
         .element-container:has(.success-button-marker) + div .stFormSubmitButton button {
@@ -284,7 +299,7 @@ def _list_users():
         return [
             {
                 "value": user.user_id,
-                "label": f"{user.display_name} / {user.role} / {teams.get(user.team_id, '\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a')}",
+                "label": f"{user.display_name} / {user.role} / {teams.get(user.team_id, 'チーム未設定')}",
             }
             for user in repo.list_users(active_only=True)
         ]
@@ -319,7 +334,7 @@ def _to_user_dict(user, repo: MasterRepository):
         "email": user.email,
         "role": user.role,
         "team_id": user.team_id,
-        "team_name": team.team_name if team else "\u30c1\u30fc\u30e0\u672a\u8a2d\u5b9a",
+        "team_name": team.team_name if team else "チーム未設定",
         "is_active": user.is_active,
         "last_login_at": user.last_login_at,
     }
