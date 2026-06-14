@@ -190,15 +190,15 @@ def _apply_layout_style():
             width: auto !important;
             min-width: 96px;
             border-radius: 10px;
-            border: 1px solid #2563EB;
-            background: #2563EB;
-            color: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            background: #FFFFFF;
+            color: #111827;
             box-shadow: none;
         }
         .stFormSubmitButton button:hover {
-            background: #1D4ED8;
-            border-color: #1D4ED8;
-            color: #FFFFFF;
+            background: #FFFFFF;
+            border-color: #94A3B8;
+            color: #111827;
         }
         .stButton button[kind="primary"] {
             background: #2563EB;
