@@ -34,6 +34,22 @@ def badge(label: str, color: str, filled: bool = True) -> str:
     )
 
 
+
+_BUTTON_MARKER_CLASSES = {
+    "secondary": "secondary-button-marker",
+    "success": "success-button-marker",
+    "danger": "danger-button-marker",
+}
+
+
+def render_button_marker(kind: str, target=None) -> None:
+    """Render a marker consumed by the global Streamlit button CSS workaround."""
+    marker_class = _BUTTON_MARKER_CLASSES.get(kind)
+    if marker_class is None:
+        allowed = ", ".join(sorted(_BUTTON_MARKER_CLASSES))
+        raise ValueError(f"Unknown button marker kind: {kind}. Allowed: {allowed}")
+    (target or st).markdown(f"<div class='{marker_class}'></div>", unsafe_allow_html=True)
+
 def ensure_logged_in():
     ensure_app_ready()
 

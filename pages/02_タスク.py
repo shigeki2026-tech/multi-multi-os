@@ -126,7 +126,7 @@ def render_task_card(task: dict, actor_id: int):
             st.session_state["show_task_create"] = False
             st.rerun()
 
-        st.markdown("<div class='success-button-marker'></div>", unsafe_allow_html=True)
+        render_button_marker("success")
         if st.button(
             "完了",
             key=f"done_{task['task_id']}",
@@ -137,7 +137,7 @@ def render_task_card(task: dict, actor_id: int):
                 container.task_service.change_status(task["task_id"], "完了", actor_id)
             st.rerun()
 
-        st.markdown("<div class='danger-button-marker'></div>", unsafe_allow_html=True)
+        render_button_marker("danger")
         if st.button(
             "取消",
             key=f"archive_{task['task_id']}",
@@ -155,7 +155,7 @@ st.set_page_config(page_title="タスク", layout="wide")
 
 from src.services.container import service_scope
 from src.ui.bootstrap import ensure_app_ready
-from src.ui.session import ensure_logged_in, render_sidebar
+from src.ui.session import ensure_logged_in, render_button_marker, render_sidebar
 ensure_app_ready()
 user = ensure_logged_in()
 render_sidebar(user)
@@ -232,7 +232,7 @@ if panel_col:
                 with st.form("create_task_form", clear_on_submit=True):
                     top = st.columns([1.4, 0.8])
                     top[0].markdown("### 新規タスク")
-                    top[1].markdown("<div class='secondary-button-marker'></div>", unsafe_allow_html=True)
+                    render_button_marker("secondary", top[1])
                     close_create = top[1].form_submit_button("閉じる")
 
                     title = st.text_input("件名")
@@ -324,9 +324,9 @@ if panel_col:
                 with st.form("edit_task_form"):
                     action = st.columns(3)
                     save_clicked = action[0].form_submit_button("保存", type="primary")
-                    action[1].markdown("<div class='success-button-marker'></div>", unsafe_allow_html=True)
+                    render_button_marker("success", action[1])
                     complete_clicked = action[1].form_submit_button("完了")
-                    action[2].markdown("<div class='secondary-button-marker'></div>", unsafe_allow_html=True)
+                    render_button_marker("secondary", action[2])
                     cancel_clicked = action[2].form_submit_button("キャンセル")
 
                     title = st.text_input("件名", value=detail["title"])
