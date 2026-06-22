@@ -139,3 +139,95 @@ def test_no_log_skips_append(tmp_path):
     assert cli.main(_argv(d)) == 0
     assert log_path.exists()
     assert log_path.read_text(encoding="utf-8").strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# 共有フォルダ運用: --move-processed / --processed-dir
+# ---------------------------------------------------------------------------
+def _log_records(data_dir: Path) -> list:
+    import json
+
+    log_path = data_dir / "run_log.jsonl"
+    return [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_move_processed_moves_csv_to_processed_dir(tmp_path):
+    d = _dirs(tmp_path)
+    processed = tmp_path / "processed"
+    src = _write_csv(d["inbox"] / "report.csv", _ONE_ABANDON)
+
+    rc = cli.main(_argv(d, "--processed-dir", str(processed), "--move-processed"))
+    assert rc == 0
+    # 元CSVはinboxから消え、processedへ同名で移動している
+    assert not src.exists()
+    assert (processed / "report.csv").exists()
+    # 出力(.txt/.json)は通常どおり作られる
+    txt, js = _outputs(d["outbox"])
+    assert len(txt) == 1 and len(js) == 1
+
+
+def test_move_processed_requires_processed_dir(tmp_path):
+    d = _dirs(tmp_path)
+    _write_csv(d["inbox"] / "report.csv", _ONE_ABANDON)
+    # --processed-dir なしの --move-processed は引数不整合エラー(2)
+    assert cli.main(_argv(d, "--move-processed")) == 2
+
+
+def test_source_csv_stays_in_inbox_on_validation_error(tmp_path):
+    d = _dirs(tmp_path)
+    processed = tmp_path / "processed"
+    # スキルグループ欠落 → 必須列エラー(2)。--move-processed を付けても移動しない。
+    src = _write_csv(
+        d["inbox"] / "bad.csv", [{"放棄呼": "1", "着信時間": "2026-06-01 18:01"}]
+    )
+    rc = cli.main(_argv(d, "--processed-dir", str(processed), "--move-processed"))
+    assert rc == 2
+    assert src.exists()  # 元CSVはinboxに残る
+    assert not processed.exists() or list(processed.glob("*.csv")) == []
+
+
+def test_move_processed_collision_adds_timestamp_suffix(tmp_path):
+    d = _dirs(tmp_path)
+    processed = tmp_path / "processed"
+    # processed に既に同名ファイルがある状態を作る
+    processed.mkdir(parents=True)
+    (processed / "report.csv").write_text("already here", encoding="utf-8")
+
+    src = _write_csv(d["inbox"] / "report.csv", _ONE_ABANDON)
+    rc = cli.main(_argv(d, "--processed-dir", str(processed), "--move-processed"))
+    assert rc == 0
+    assert not src.exists()
+    # 既存 report.csv は温存され、別名で退避されている
+    assert (processed / "report.csv").read_text(encoding="utf-8") == "already here"
+    moved = [p for p in processed.glob("report_*.csv")]
+    assert len(moved) == 1
+    assert moved[0].name != "report.csv"
+
+
+def test_run_log_preserves_japanese_filename(tmp_path):
+    d = _dirs(tmp_path)
+    name = "通話呼詳細V3.5(CSV)_20260622141933.csv"
+    _write_csv(d["inbox"] / name, _ONE_ABANDON)
+
+    assert cli.main(_argv(d)) == 0
+    records = _log_records(d["data"])
+    assert len(records) == 1
+    # run_log.jsonl はUTF-8で書かれ、実際のWindowsファイル名を文字化けなく保持する
+    assert records[0]["filename"] == name
+
+
+def test_move_processed_helper_unc_style_paths(tmp_path):
+    # UNC運用を模した tmp_path テスト（実ネットワーク不要）。
+    # 退避先フォルダが未作成でも作成され、元名を保持して移動できる。
+    inbox = tmp_path / "share" / "inbox"
+    processed = tmp_path / "share" / "processed"
+    src = _write_csv(inbox / "通話呼詳細.csv", _ONE_ABANDON)
+
+    dest = cli.move_processed_csv(src, processed)
+    assert dest == processed / "通話呼詳細.csv"
+    assert dest.exists()
+    assert not src.exists()

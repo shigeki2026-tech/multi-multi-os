@@ -16,15 +16,23 @@ JSONサマリをファイル出力するだけのものです。
         data/ct_e1/inbox/ の最新 *.csv を mtime で選び処理する。
     python scripts/run_ct_e1_call_loss_check.py --csv path/to/file.csv
         明示したCSVを処理する（inbox選択より優先）。
+    python scripts/run_ct_e1_call_loss_check.py --processed-dir <PATH> --move-processed
+        処理成功後に元CSVを <PATH> へ移動する（共有フォルダ運用向け）。
+
+共有フォルダ運用（inbox/outbox/processed）:
+    --inbox / --outbox / --data-dir / --processed-dir には UNC パス
+    （例: \\\\server\\share\\...\\inbox）も指定できる。--move-processed を付けると
+    処理に成功した元CSVだけを processed へ退避し、inbox の再処理を防げる。
 
 終了コード:
     0 成功
     1 CSVが見つからない
-    2 CSV読込 / 必須列 / 業務エラー
-    3 予期しないエラー
+    2 CSV読込 / 必須列 / 業務エラー / 引数の不整合
+    3 予期しないエラー（処理済みCSVの移動失敗を含む）
 """
 import argparse
 import json
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -92,6 +100,16 @@ def parse_args(argv=None) -> argparse.Namespace:
         default=DEFAULT_DATA_DIR,
         help=f"CtE1Store のベースフォルダ（設定/実行ログ。既定: {DEFAULT_DATA_DIR}）。",
     )
+    parser.add_argument(
+        "--processed-dir",
+        default=None,
+        help="処理済みCSVの退避先フォルダ（--move-processed と併用）。",
+    )
+    parser.add_argument(
+        "--move-processed",
+        action="store_true",
+        help="処理成功後に元CSVを --processed-dir へ移動する（--processed-dir 必須）。",
+    )
     return parser.parse_args(argv)
 
 
@@ -150,6 +168,31 @@ def write_outputs(outbox: Path, stamp: str, text: str, payload: dict) -> tuple[P
     txt_path.write_text(text, encoding="utf-8")
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return txt_path, json_path
+
+
+def move_processed_csv(csv_path: Path, processed_dir: Path, now: datetime | None = None) -> Path:
+    """処理済みの元CSVを processed_dir へ移動し、移動先パスを返す。
+
+    - 退避先フォルダが無ければ作成する（親も含む）。
+    - 元のファイル名をそのまま保持する。
+    - 同名ファイルが既にあれば、拡張子の前にタイムスタンプ接尾辞を付ける。
+      同一秒の多重実行などでさらに衝突する場合は連番を追加する。
+    - 移動は shutil.move を使う（共有フォルダ↔ローカルなど別ドライブ間でも動く）。
+
+    呼び出し側は「処理が成功した後」だけ本関数を呼ぶこと（検証エラー時は移動しない）。
+    """
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    dest = processed_dir / csv_path.name
+    if dest.exists():
+        now = now or datetime.now()
+        stamp = now.strftime("%Y%m%d_%H%M%S")
+        dest = processed_dir / f"{csv_path.stem}_{stamp}{csv_path.suffix}"
+        counter = 1
+        while dest.exists():
+            dest = processed_dir / f"{csv_path.stem}_{stamp}_{counter}{csv_path.suffix}"
+            counter += 1
+    shutil.move(str(csv_path), str(dest))
+    return dest
 
 
 # ---------------------------------------------------------------------------
@@ -224,9 +267,22 @@ def process_csv(
 # エントリポイント
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
+    # 標準出力/標準エラーをUTF-8に固定する。Windowsの既定コンソール（cp932）へ
+    # リダイレクトした実行ログが文字化け（UTF-8をcp932で解釈）するのを防ぐ。
+    # ※ run_log.jsonl 自体は CtE1Store が常にUTF-8で書くので元から正しい。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     args = parse_args(argv)
     inbox = Path(args.inbox)
     outbox = Path(args.outbox)
+
+    if args.move_processed and not args.processed_dir:
+        print("--move-processed を使うには --processed-dir を指定してください。", file=sys.stderr)
+        return 2
 
     try:
         # 入力CSVの決定
@@ -263,6 +319,16 @@ def main(argv=None) -> int:
         print(outcome["text"])
         print(f"\n[出力] {outcome['txt_path']}", file=sys.stderr)
         print(f"[出力] {outcome['json_path']}", file=sys.stderr)
+
+        # 処理成功後にのみ、元CSVを退避する（検証エラー時はここに到達しない）。
+        if args.move_processed:
+            try:
+                dest = move_processed_csv(csv_path, Path(args.processed_dir))
+            except Exception as exc:  # noqa: BLE001 - 移動失敗は終了コード3に集約
+                print(f"処理済みCSVの移動に失敗しました: {exc}", file=sys.stderr)
+                return 3
+            print(f"[移動] {csv_path.name} -> {dest}", file=sys.stderr)
+
         return 0
 
     except Exception as exc:  # noqa: BLE001 - 想定外は終了コード3にまとめる

@@ -21,6 +21,48 @@
 - 設定/実行ログ: `data/ct_e1/`（`settings.json` / `run_log.jsonl`、既存 `CtE1Store`）
 - いずれも `.gitignore` の `data/ct_e1/` 配下であり、git では追跡しない。
 
+## 共有フォルダ運用（inbox / outbox / processed）
+
+複数人・複数PCで同じ共有フォルダ（UNC パス）を使う場合のフォルダ構成。
+`--inbox` / `--outbox` / `--data-dir` / `--processed-dir` には UNC パスをそのまま指定できる。
+
+```
+（共有フォルダのルート）
+├─ inbox/       … CT-e1 から手動エクスポートした CSV を置く
+├─ outbox/      … 通知文(.txt) / 集計サマリ(.json) の出力先
+└─ processed/   … 処理に成功した元CSVの退避先（--move-processed 使用時）
+```
+
+- `--move-processed` を付けると、**処理に成功した元CSVだけ**を `--processed-dir` へ移動する。
+  これにより inbox に未処理 CSV だけが残り、同じ CSV の二重処理を防げる。
+- 退避先フォルダが無ければ自動作成する。元のファイル名はそのまま保持する。
+- 退避先に同名ファイルがある場合は、拡張子の前にタイムスタンプ接尾辞を付けて退避する
+  （例: `report.csv` → `report_20260622_143925.csv`）。
+- **検証エラー（必須列不足など）や予期しないエラーのときは移動しない**（元CSVは inbox に残る）。
+
+### 共有フォルダでの実行例（UNC パス）
+
+```powershell
+cd "$env:USERPROFILE\Documents\Projects\multi-multi-os"
+
+$base = "\\192.168.121.14\Public2\Supervisor\マルチ\シフト進捗＆PJR用\通話呼詳細エクスポート"
+
+python scripts/run_ct_e1_call_loss_check.py `
+    --inbox "$base\inbox" `
+    --outbox "$base\outbox" `
+    --data-dir "$base" `
+    --processed-dir "$base\processed" `
+    --move-processed
+```
+
+### 文字コードについて（実行ログの文字化け対策）
+
+- `run_log.jsonl` は常に **UTF-8** で書き出される（実際のWindowsファイル名を文字化けなく保持する）。
+- Windows 標準ツールは UTF-8 を cp932 と誤認して文字化け表示することがある。閲覧時は UTF-8 を指定する:
+  `Get-Content "$base\run_log.jsonl" -Encoding utf8`
+- CLI 自身の標準出力 / 標準エラーも UTF-8 に固定しているため、`>` でファイルへリダイレクトした
+  実行ログも UTF-8 として正しく保存される。
+
 ## CLI: `scripts/run_ct_e1_call_loss_check.py`
 
 既存サービス関数（`detect_and_read` / `validate_columns` / `aggregate_call_loss` /
@@ -49,6 +91,8 @@ python scripts/run_ct_e1_call_loss_check.py --csv data\ct_e1\inbox\sample.csv
 | `--inbox PATH` | 入力フォルダ（既定 `data/ct_e1/inbox`） |
 | `--outbox PATH` | 出力フォルダ（既定 `data/ct_e1/outbox`） |
 | `--data-dir PATH` | 設定/実行ログのベース（既定 `data/ct_e1`） |
+| `--processed-dir PATH` | 処理済みCSVの退避先（`--move-processed` と併用） |
+| `--move-processed` | 処理成功後に元CSVを `--processed-dir` へ移動（`--processed-dir` 必須） |
 
 引数なしでも動作する（inbox の最新 CSV を選ぶ）。
 
@@ -58,8 +102,8 @@ python scripts/run_ct_e1_call_loss_check.py --csv data\ct_e1\inbox\sample.csv
 | --- | --- |
 | 0 | 成功 |
 | 1 | CSV が見つからない |
-| 2 | CSV 読込 / 必須列 / 業務エラー |
-| 3 | 予期しないエラー |
+| 2 | CSV 読込 / 必須列 / 業務エラー / 引数の不整合（`--move-processed` に `--processed-dir` 無し） |
+| 3 | 予期しないエラー（処理済みCSVの移動失敗を含む） |
 
 スケジューラやバッチから呼ぶ際は、この終了コードで成否を判定できる。
 
@@ -78,8 +122,18 @@ python scripts/run_ct_e1_call_loss_check.py --csv data\ct_e1\inbox\sample.csv
 本段階では Task Scheduler への登録は行わない。登録する場合は、別途明示的な依頼を受けてから
 以下の方針で検討する。
 
-1. 実行コマンドは上記 CLI をそのまま使う（例: 18:00 / 20:00 / 21:00 の呼損確認）。
-2. 事前に CT-e1 からの CSV エクスポートを `data/ct_e1/inbox/` に置く運用を確定する
+**前提: Task Scheduler への登録は、共有フォルダ（UNC パス）での手動テストが通ってから行う。**
+具体的には、上記「共有フォルダでの実行例」を手動で実行し、
+
+- 4スキルグループの集計・通知文プレビューが期待どおり出力されること
+- `outbox/` に `.txt` / `.json` が作られること
+- `--move-processed` で元CSVが `processed/` へ退避されること
+- `run_log.jsonl` が UTF-8 で正しく追記されること（文字化けしないこと）
+
+を確認できてから、はじめてスケジューラ登録を検討する。
+
+1. 実行コマンドは上記 CLI（共有フォルダ実行例）をそのまま使う（例: 18:00 / 20:00 / 21:00 の呼損確認）。
+2. 事前に CT-e1 からの CSV エクスポートを共有フォルダの `inbox/` に置く運用を確定する
    （CSV 取得自体の自動化は本リポジトリの対象外）。
 3. 成否は終了コードで監視する。出力 `.txt` / `.json` を確認用に残す。
 4. Teams 本送信が必要になった場合は、別タスクとして明示依頼の上で追加する
