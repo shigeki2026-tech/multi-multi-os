@@ -55,6 +55,45 @@ python scripts/run_ct_e1_call_loss_check.py `
     --move-processed
 ```
 
+### 確定ラッパー: `scripts/Run-CtE1YoshikeiCallLoss.ps1`
+
+ヨシケイ4スキルグループ向けに、確認済みの実行コマンドを固定化した PowerShell ラッパー。
+中身は上記 CLI を共有フォルダに対して呼ぶだけ（ログイン自動化・GUI自動化・Teams送信はしない）。
+
+固定している内容:
+
+- 共有ベース: `\\192.168.121.14\Public2\Supervisor\マルチ\シフト進捗＆PJR用\通話呼詳細エクスポート`
+- `--inbox` / `--outbox` / `--data-dir` / `--processed-dir` を上記ベース配下に設定
+- `--move-processed`（処理成功した元CSVのみ `processed/` へ退避）
+- `--threshold 1`
+- `--target-skill-group` を以下の4つで指定:
+  - `ヨシケイ新潟 お客様相談センター0342361014 着信`
+  - `ヨシケイ東京 お客様相談センター0342361015 着信`
+  - `ヨシケイ横浜 一次受付業務0342361012 着信`
+  - `ヨシケイ滋賀 お客様相談センター0342361013 着信`
+
+挙動:
+
+- 実行時にタイムスタンプ付きヘッダーをコンソールへ表示する。
+- 内部 Python CLI の終了コードをそのまま返す（0/1/2/3）。
+- スクリプト先頭で自動的にリポジトリ直下へ移動する（どこから呼んでもよい）。
+- 日本語リテラルを含むため **UTF-8 (BOM 付き)** で保存している。
+  Windows PowerShell 5.1 が cp932 と誤認するのを防ぐため、BOM を外さないこと。
+
+#### 手動実行
+
+```powershell
+# どのフォルダからでも可（スクリプトが自動でリポジトリ直下へ移動する）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-CtE1YoshikeiCallLoss.ps1
+
+# 終了コードの確認
+echo $LASTEXITCODE
+```
+
+> ⚠️ このラッパーは本番の共有フォルダ（UNC）に対して実行され、`--move-processed` により
+> 処理に成功した元CSVを `inbox/` から `processed/` へ移動する。実行前に共有フォルダへ
+> アクセスできること、`inbox/` に処理対象CSVが揃っていることを確認すること。
+
 ### 文字コードについて（実行ログの文字化け対策）
 
 - `run_log.jsonl` は常に **UTF-8** で書き出される（実際のWindowsファイル名を文字化けなく保持する）。
@@ -132,12 +171,39 @@ python scripts/run_ct_e1_call_loss_check.py --csv data\ct_e1\inbox\sample.csv
 
 を確認できてから、はじめてスケジューラ登録を検討する。
 
-1. 実行コマンドは上記 CLI（共有フォルダ実行例）をそのまま使う（例: 18:00 / 20:00 / 21:00 の呼損確認）。
+1. 実行コマンドは確定ラッパー `scripts/Run-CtE1YoshikeiCallLoss.ps1` をそのまま使う
+   （例: 18:00 / 20:00 / 21:00 の呼損確認）。
 2. 事前に CT-e1 からの CSV エクスポートを共有フォルダの `inbox/` に置く運用を確定する
    （CSV 取得自体の自動化は本リポジトリの対象外）。
 3. 成否は終了コードで監視する。出力 `.txt` / `.json` を確認用に残す。
 4. Teams 本送信が必要になった場合は、別タスクとして明示依頼の上で追加する
    （本 CLI は通知文プレビューの生成までに留める）。
+
+### Task Scheduler 登録プラン（明示依頼後に実施）
+
+> ⚠️ **重要: タスクを実行する Windows ユーザーが UNC 共有
+> （`\\192.168.121.14\Public2\...`）にアクセスできることが必須。**
+> Task Scheduler の「ユーザーがログオンしているかどうかにかかわらず実行する」設定では、
+> ログオンセッションが無いため共有ドライブのマッピングやネットワーク資格情報が
+> 効かず、`inbox/` を読めずに失敗することがある。次の点を満たすこと:
+> - 実行アカウントが当該共有への読み書き権限を持つドメイン/ローカルユーザーであること。
+> - 認証情報の保存（資格情報マネージャー）またはサービスアカウントで UNC に到達できること。
+> - 可能なら登録前に、その実行アカウントで手動ラッパーが成功することを確認する。
+
+登録例（明示依頼を受けてから実行する。本段階では登録しない）:
+
+```powershell
+# 例: 平日 18:00 に実行（実行アカウント・権限は上記の警告に従って指定すること）
+$action  = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$env:USERPROFILE\Documents\Projects\multi-multi-os\scripts\Run-CtE1YoshikeiCallLoss.ps1`""
+$trigger = New-ScheduledTaskTrigger -Daily -At 18:00
+# Register-ScheduledTask -TaskName "CtE1_Yoshikei_CallLoss_1800" -Action $action -Trigger $trigger -RunLevel Highest
+```
+
+- 18:00 / 20:00 / 21:00 のように時刻別タスクを分けると、しきい値や対象を時刻ごとに調整しやすい。
+- 成否はタスクの「前回の実行結果」（= CLI 終了コード）で監視できる。
+- `run_log.jsonl` と `outbox/` を後追い確認用に残す。
 
 ## 検証
 
