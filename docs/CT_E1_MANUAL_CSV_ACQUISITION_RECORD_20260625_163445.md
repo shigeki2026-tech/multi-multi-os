@@ -234,3 +234,44 @@
 - inbox直保存後、Task Schedulerが 18:05 / 20:05 / 21:05 に処理することを実時刻で確認する。
 - inbox空の扱いは、正常終了または通知対象として整理する。
 - no_csv / parse_error / output_error を区別して、outbox または run_log で確認できるようにする。
+
+---
+
+## 13. 2026/06/25 inbox直保存後の手動Task起動確認
+
+### 13.1 確認結果
+
+- 結論：成功。
+- CT-e1からCSVを出力し、保存ダイアログで inbox に直接保存できた。
+- その後、Task Scheduler登録済みタスクを手動起動し、CSV処理、outbox出力、processed移動まで成功した。
+
+### 13.2 実行内容
+
+- 手動起動タスク：CT-e1 Yoshikei Call Loss 20-05
+- 起動時刻：2026/06/25 18:15:49
+- 最終 LastTaskResult：0
+- 処理前 inbox：通話呼詳細V3.5(CSV)_20260625181019.csv
+- 処理後 inbox：空
+- processed移動：通話呼詳細V3.5(CSV)_20260625181019.csv
+- outbox出力：ct_e1_call_loss_20260625_181627.txt
+- outbox出力：ct_e1_call_loss_20260625_181627.json
+
+### 13.3 run_log結果
+
+- filename：通話呼詳細V3.5(CSV)_20260625181019.csv
+- encoding：cp932
+- total_rows：91014
+- outbound_excluded：24146
+- abandon_count：96
+- threshold：1
+- alert_count：4
+- txt_output：ct_e1_call_loss_20260625_181627.txt
+- json_output：ct_e1_call_loss_20260625_181627.json
+- at：2026-06-25T18:16:27
+
+### 13.4 残課題
+
+- 手動起動での処理成功は確認済み。
+- 残る確認は、18:05 / 20:05 / 21:05 の実時刻トリガーで同じ処理が走るか。
+- ただし、今回の手動起動後は inbox が空のため、このまま次回定時を待つと no_csv になる見込み。
+- 実時刻でCSV処理を確認するには、定時前に新しいCSVを inbox に置く必要がある。
