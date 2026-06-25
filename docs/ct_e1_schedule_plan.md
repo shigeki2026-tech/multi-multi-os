@@ -213,3 +213,63 @@ python -m compileall app.py src pages scripts
 pytest
 git status --short
 ```
+
+<!-- CT_E1_CALL_LOSS_CURRENT_STATUS_START -->
+
+## CT-e1 呼損チェック 現在ステータス
+
+更新日: 2026-06-25
+
+### 確定済み
+
+- CT-e1 呼損チェックは、通話呼詳細CSVを対象に実装済み。
+- Task Schedulerへの登録済み。
+- 登録タスク:
+  - CT-e1 Yoshikei Call Loss 18-05
+  - CT-e1 Yoshikei Call Loss 20-05
+  - CT-e1 Yoshikei Call Loss 21-05
+- 実行時刻:
+  - 毎日 18:05
+  - 毎日 20:05
+  - 毎日 21:05
+- Task Schedulerの実時刻発火は確認済み。
+- Start-ScheduledTask による手動起動は成功確認済み。
+- 2026-06-22 20時分のCSV処理成功確認済み。
+  - 入力CSV: 通話呼詳細V3.5(CSV)_20260622190439.csv
+  - 出力: ct_e1_call_loss_20260622_200957.txt/json
+  - 放棄呼: 90
+  - alert_count: 4
+- 2026-06-25 commit 51a2075 Treat missing CT-e1 CSV as no-op で、CSVなし時の扱いを修正済み。
+  - CSVなし:
+un_log.jsonl に status=no_csv を記録して exit 0
+  - CSVあり: 従来どおり処理
+  - CSVあり処理失敗: 異常扱い
+
+### 重要な運用前提
+
+- 現在のTask Scheduler設定は InteractiveToken。
+- ログオン中のユーザーセッション前提。
+- ログオフ中の完全無人実行は未検証。
+- 3回運用する場合、各時刻前にCSVを inbox へ置く必要がある。
+  - 18:05前に18時確認用CSV
+  - 20:05前に20時確認用CSV
+  - 21:05前に21時確認用CSV
+- --move-processed 有効のため、1つのCSVを3回使い回す設計ではない。
+
+### 未完了
+
+- 画面ロック中の実行確認
+- ログオフ中実行の検証
+- CSV配置SOPの確定
+- 失敗通知または日次確認SOP
+- Task Scheduler XMLのGit管理要否判断
+- リアルタイム放棄呼 .xls 対応要否判断
+
+### 禁止・保留
+
+- CT-e1ログイン自動化へ進まない。
+- GUI自動化へ進まない。
+- 非公開API / Cookie / token に触らない。
+- 複数PCで同じ inbox を叩かない。
+
+<!-- CT_E1_CALL_LOSS_CURRENT_STATUS_END -->
