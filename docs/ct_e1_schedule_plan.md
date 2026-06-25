@@ -273,3 +273,13 @@ un_log.jsonl に status=no_csv を記録して exit 0
 - 複数PCで同じ inbox を叩かない。
 
 <!-- CT_E1_CALL_LOSS_CURRENT_STATUS_END -->
+
+<!-- CT_E1_CSV_SOP_REFERENCE_START -->
+
+## CT-e1 CSV配置SOP
+
+CSV配置・処理判定・一時タスク検証の詳細は以下を参照。
+
+    docs/ct_e1_csv_placement_sop.md
+
+<!-- CT_E1_CSV_SOP_REFERENCE_END -->
