@@ -241,3 +241,70 @@ git log --oneline -8
 git status --short は空
 HEAD は 983d019 以降
 ```
+## 11. 最終スモーク確認
+
+更新日: 2026-06-25
+
+このチャット終盤で以下を追加確認済み。
+
+### pytest
+
+```text
+python -m pytest -q
+32 passed, 33 warnings
+pytest exit code: 0
+```
+
+補足:
+
+```text
+pytest終了後に一時ディレクトリ cleanup_numbered_dir の PermissionError が出たが、pytest exit code は 0。
+テスト失敗扱いにはしない。
+```
+
+### logs/ のGit除外
+
+pytestログ保存で logs/ が未追跡になったため、.gitignore に追加済み。
+
+```text
+0603b5e Ignore local logs directory
+```
+
+### Streamlit起動確認
+
+```text
+python -m streamlit run app.py --server.port 8765
+http://localhost:8765
+```
+
+確認済み:
+
+```text
+ホーム画面表示 OK
+CT-e1自動化ページ表示 OK
+Phase 0確認タブ表示 OK
+CSV呼損チェックタブ表示 OK
+設定タブ表示 OK
+実行ログタブ表示 OK
+赤いTracebackなし
+画面真っ白なし
+Streamlit落ちなし
+```
+
+### この時点のHEAD
+
+```text
+0603b5e Ignore local logs directory
+ff02f29 Add CT-e1 call-loss handoff
+983d019 Save CT-e1 task scheduler definitions
+2039daa Document CT-e1 lock-screen scheduler success
+9d1ec22 Add CT-e1 CSV placement SOP
+```
+
+### 固定結論
+
+```text
+CT-e1関連はここで完了扱い。
+これ以上このチャットで機能追加しない。
+PowerToys更新、日次SOP、ログオフ中実行、リアルタイム放棄呼.xls対応は別件。
+```
