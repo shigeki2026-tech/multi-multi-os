@@ -17,3 +17,6 @@ Thumbs.db
 *.sqlite3
 _local_backups/
 backup/
+
+# Local runtime/test logs
+logs/
