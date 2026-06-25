@@ -81,6 +81,9 @@ CSVあり処理成功時:
       LastTaskResult = 0
       run_log に status=no_csv 追記
 
+    画面ロック中 Task Scheduler経由:
+      LastTaskResult = 0
+      run_log に status=no_csv at 2026-06-25T13:44:01 追記
     CSVあり Task Scheduler経由:
       入力CSV: 通話呼詳細V3.5(CSV)_20260625131513.csv
       total_rows: 89356
@@ -104,7 +107,6 @@ Runningが終わるまで待ってから判定する。
 
 ## 未完了
 
-    画面ロック中の実行確認
     ログオフ中実行の検証
     失敗通知または日次確認SOP
     Task Scheduler XML保存要否判断

@@ -233,6 +233,10 @@ git status --short
   - 毎日 20:05
   - 毎日 21:05
 - Task Schedulerの実時刻発火は確認済み。
+- 2026-06-25 13:44、画面ロック中のTask Scheduler実行を確認済み。
+  - 一時タスク: CT-e1 Yoshikei Call Loss TEMP LOCK
+  - LastTaskResult: 0
+  - run_log: status=no_csv at 2026-06-25T13:44:01
 - Start-ScheduledTask による手動起動は成功確認済み。
 - 2026-06-22 20時分のCSV処理成功確認済み。
   - 入力CSV: 通話呼詳細V3.5(CSV)_20260622190439.csv
@@ -258,7 +262,6 @@ un_log.jsonl に status=no_csv を記録して exit 0
 
 ### 未完了
 
-- 画面ロック中の実行確認
 - ログオフ中実行の検証
 - CSV配置SOPの確定
 - 失敗通知または日次確認SOP
