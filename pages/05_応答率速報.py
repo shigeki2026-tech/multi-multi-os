@@ -15,7 +15,7 @@ render_sidebar(user)
 
 st.title("応答率速報")
 
-tab_manual, tab_cdr, tab_view = st.tabs(["手入力", "CDR取込", "応答率閲覧"])
+tab_view, tab_cdr, tab_manual = st.tabs(["応答率閲覧", "CDR取込", "手入力"])
 
 # ===========================================================================
 # 手入力タブ（既存 leoc_service。機能は変更しない）
@@ -466,55 +466,154 @@ with tab_cdr:
                     st.rerun()
 
 # ===========================================================================
-# 応答率閲覧タブ（新規）
-# 取込時に保存した中間集計 answer_rate_threshold_stats から、CSVを再アップロードせずに
-# 期間・業務名(合算ラベル)・回線(skill_group)・秒数閾値を選んで応答率を表示する。
-# 合算値は保存しない。選択回線の completed/valid_abandon を都度合算し応答率を再計算する。
-# UI層へSQLAlchemy ORMは渡さない（repositoryがdict/数値で返す）。
+# 応答率閲覧タブ
+# ゴール: 期間・対象・放棄秒を明示し、入電数/応答数/呼損数/応答率だけを即判断する。
+# 600件超の回線を巨大プルダウンに入れない。個別回線は検索→候補30件だけ表示。
 # ===========================================================================
 with tab_view:
-    st.caption(
-        "取込済みの集計データから応答率を閲覧します（CSVの再アップロードは不要）。"
-        "対象期間と業務グループ（skill_group_merge）・秒数閾値を選ぶと、配下の回線をまとめて集計します。"
-        "回線を個別に指定したい場合は『詳細設定』を開いてください。"
+    st.markdown(
+        """
+        <style>
+        .ar-page-title {
+            font-size: 2.0rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            margin: 0.2rem 0 1.2rem 0;
+            color: #111827;
+        }
+        .ar-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(150px, 1fr));
+            gap: 1.0rem;
+            margin: 1.1rem 0 0.8rem 0;
+        }
+        .ar-kpi-card {
+            border: 1.5px solid #2563eb;
+            border-radius: 10px;
+            background: #ffffff;
+            min-height: 118px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .ar-kpi-label {
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 0.48rem;
+        }
+        .ar-kpi-value {
+            font-size: 2.25rem;
+            line-height: 1.05;
+            font-weight: 900;
+            color: #111827;
+            letter-spacing: 0.01em;
+        }
+        .ar-info-line {
+            color: #374151;
+            font-size: 0.90rem;
+            line-height: 1.55;
+            margin: 0.35rem 0 0.65rem 0;
+        }
+        .ar-warn-box {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 8px;
+            color: #9a3412;
+            font-size: 0.90rem;
+            padding: 0.65rem 0.8rem;
+            margin: 0.55rem 0 0.85rem 0;
+        }
+        div[data-testid="stSelectbox"] label,
+        div[data-testid="stDateInput"] label,
+        div[data-testid="stTextInput"] label,
+        div[data-testid="stRadio"] label {
+            font-weight: 800;
+            color: #111827;
+        }
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] {
+            min-height: 46px;
+            border-radius: 8px;
+            background: #ffffff;
+        }
+        @media (max-width: 1100px) {
+            .ar-kpi-grid {
+                grid-template-columns: repeat(2, minmax(150px, 1fr));
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
+
+    st.markdown('<div class="ar-page-title">応答率速報</div>', unsafe_allow_html=True)
 
     with service_scope() as container:
         v_has_data = container.answer_rate_threshold_repository.has_data()
         v_min, v_max = container.answer_rate_threshold_repository.stat_date_range()
+        exclude_rows = container.answer_rate_master_service.list_exclude_numbers()
+
+    active_excludes = [r for r in exclude_rows if r.get("is_active")]
 
     if not v_has_data or v_min is None:
         st.info(
             "閲覧できる集計データがありません。『CDR取込』タブでCSVを取り込むと、"
-            "0/3/10/20/30秒の中間集計（answer_rate_threshold_stats）が保存され、ここで閲覧できるようになります。"
+            "ここに応答率速報が表示されます。"
         )
     else:
-        # 1. 対象期間
-        pc1, pc2 = st.columns(2)
+        # 期間は常時表示する。既定は取込済みデータの全期間。
+        def _clamp_date(value, fallback):
+            if value is None:
+                return fallback
+            if value < v_min:
+                return v_min
+            if value > v_max:
+                return v_max
+            return value
+
+        st.session_state["ar_period_start"] = _clamp_date(
+            st.session_state.get("ar_period_start", v_min), v_min
+        )
+        st.session_state["ar_period_end"] = _clamp_date(
+            st.session_state.get("ar_period_end", v_max), v_max
+        )
+
+        pc1, pc2, pc3 = st.columns([1.0, 1.0, 1.2], gap="large")
         view_start = pc1.date_input(
-            "対象期間 開始（stat_date）", value=v_min, min_value=v_min, max_value=v_max, key="view_start"
+            "対象期間 開始",
+            min_value=v_min,
+            max_value=v_max,
+            key="ar_period_start",
         )
         view_end = pc2.date_input(
-            "対象期間 終了（stat_date）", value=v_max, min_value=v_min, max_value=v_max, key="view_end"
+            "対象期間 終了",
+            min_value=v_min,
+            max_value=v_max,
+            key="ar_period_end",
         )
+        threshold_sel = pc3.selectbox(
+            "放棄秒",
+            options=list(ar.COMPARE_THRESHOLDS),
+            index=0,
+            format_func=lambda t: f"{t}秒",
+            key="ar_threshold",
+        )
+
         if view_start > view_end:
             st.warning("対象期間の開始日は終了日以前にしてください。")
         else:
-            # 期間内に存在する回線と、業務グループ（合算ラベル）を取得
             with service_scope() as container:
                 available_lines = container.answer_rate_threshold_repository.list_skill_groups(
                     view_start, view_end
                 )
                 merges_all = container.answer_rate_master_service.list_skill_group_merge()
+
             active_merges = [m for m in merges_all if m["is_active"]]
             merge_labels = sorted({m["merge_label"] for m in active_merges})
 
-            # 長いskill_group名（弁護士ドットコム系など）は一覧で崩れるため省略表示する。
-            def _short_sg(name: str, limit: int = 46) -> str:
-                name = str(name)
-                return name if len(name) <= limit else name[:limit] + "…"
-
-            # 業務グループ配下のうち、対象期間の集計データに実在する回線だけを対象にする。
             def _lines_of_group(label: str) -> list[str]:
                 avail = set(available_lines)
                 return sorted(
@@ -525,147 +624,138 @@ with tab_view:
                     }
                 )
 
-            group_label = None  # 大表示の見出しに使う業務グループ名（直接選択時は None）
+            target_mode = st.radio(
+                "回線種別",
+                options=["業務グループ", "個別回線", "全回線"],
+                horizontal=True,
+                key="ar_target_mode",
+            )
 
-            if not merge_labels:
-                # 4/8. 業務グループ未登録: 登録を案内しつつ、直接選択で閲覧できるようにする。
-                st.info(
-                    "管理画面で skill_group_merge に業務グループを登録すると、回線を毎回選ばずに閲覧できます。"
+            selected_lines: list[str] = []
+            target_label = ""
+
+            if target_mode == "全回線":
+                selected_lines = list(available_lines)
+                target_label = "全回線"
+
+            elif target_mode == "業務グループ":
+                if not merge_labels:
+                    st.warning("業務グループが未登録です。管理画面で skill_group_merge を登録してください。")
+                else:
+                    default_index = merge_labels.index("WRT") if "WRT" in merge_labels else 0
+                    group_label = st.selectbox(
+                        "回線名（グループ）",
+                        options=merge_labels,
+                        index=default_index,
+                        key="ar_group_label",
+                    )
+                    selected_lines = _lines_of_group(group_label)
+                    target_label = group_label
+
+            else:
+                search_kw = st.text_input(
+                    "個別回線検索",
+                    value=st.session_state.get("ar_line_search", ""),
+                    placeholder="回線名・番号・業務名の一部を入力",
+                    key="ar_line_search",
+                ).strip()
+
+                if not search_kw:
+                    st.info("個別回線を選ぶ場合は、検索文字を入力してください。候補は最大30件だけ表示します。")
+                else:
+                    needle = search_kw.lower()
+                    candidates = [sg for sg in available_lines if needle in str(sg).lower()]
+                    limited_candidates = candidates[:30]
+                    if not candidates:
+                        st.warning("一致する回線がありません。検索文字を変えてください。")
+                    else:
+                        if len(candidates) > len(limited_candidates):
+                            st.caption(f"一致 {len(candidates):,}件。先頭30件のみ表示しています。検索文字を追加して絞り込んでください。")
+                        line_label = st.selectbox(
+                            "回線名（個別）",
+                            options=limited_candidates,
+                            key="ar_line_label",
+                        )
+                        selected_lines = [line_label]
+                        target_label = line_label
+
+            if active_excludes:
+                sample = ", ".join(
+                    str(r.get("caller_number", ""))
+                    for r in active_excludes[:3]
+                    if r.get("caller_number")
                 )
-                selected_lines = st.multiselect(
-                    f"回線（skill_group）を直接選択　全 {len(available_lines)} 件（入力して検索できます）",
-                    options=available_lines,
-                    default=[],
-                    key="view_lines_direct",
+                st.markdown(
+                    f'<div class="ar-info-line">対象期間: <b>{view_start} 〜 {view_end}</b> / '
+                    f'対象: <b>{target_label or "-"}</b> / 対象回線: <b>{len(selected_lines):,}件</b> / '
+                    f'有効除外番号: <b>{len(active_excludes):,}件</b>'
+                    + (f'（例: {sample}）' if sample else '')
+                    + '</div>',
+                    unsafe_allow_html=True,
                 )
             else:
-                # 1/2. 業務グループを主役に選ばせ、配下の回線を自動で対象にする。
-                group_label = st.selectbox(
-                    "業務グループ（skill_group_merge の親ラベル）",
-                    options=merge_labels,
-                    index=0,
-                    key="view_group",
+                st.markdown(
+                    '<div class="ar-warn-box">有効な除外番号が登録されていません。'
+                    'テストコール等を除く運用なら、管理画面で除外番号を登録してからCDRを再取込してください。</div>',
+                    unsafe_allow_html=True,
                 )
-                group_lines = _lines_of_group(group_label)
 
-                # 3. 対象回線一覧（件数＋省略表示。expander内に格納）
-                if not group_lines:
-                    all_children = sorted(
-                        {m["child_skill_group"] for m in active_merges if m["merge_label"] == group_label}
-                    )
-                    st.warning(
-                        f"業務グループ『{group_label}』配下の回線（{len(all_children)} 件）は、"
-                        "対象期間の集計データに含まれていません。対象期間を見直してください。"
-                    )
-                else:
-                    st.caption(f"対象回線: {len(group_lines)} 件（業務グループ『{group_label}』配下）")
-                    with st.expander(f"対象回線一覧（{len(group_lines)} 件）を表示", expanded=False):
-                        st.dataframe(
-                            [{"回線(skill_group)": _short_sg(sg)} for sg in group_lines],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-
-                # 4. 回線を直接選ぶ multiselect は「詳細設定」expander の中（初期は非表示）。
-                #    既定は業務グループ配下。groupごとにkeyを分け、グループ切替で初期値が追従するようにする。
-                with st.expander("詳細設定（回線を直接選ぶ／業務グループの選択を上書き）", expanded=False):
-                    st.caption(
-                        "通常は業務グループの配下回線をそのまま使います。"
-                        "ここで回線を直接調整すると、その内容で集計します（業務グループの選択を上書き）。"
-                    )
-                    selected_lines = st.multiselect(
-                        f"回線（skill_group）　全 {len(available_lines)} 件（入力して検索できます）",
-                        options=available_lines,
-                        default=group_lines,
-                        key=f"view_lines_{group_label}",
-                    )
-
-            # 5. 秒数閾値
-            threshold_sel = st.selectbox(
-                "秒数閾値",
-                options=list(ar.COMPARE_THRESHOLDS),
-                index=0,
-                format_func=lambda t: f"{t}秒",
-                key="view_threshold",
+            st.caption(
+                "注意: この画面は取込済み集計を表示します。除外番号を後から追加・変更した場合、"
+                "既存集計には自動反映されません。対象期間の集計を削除して、同じCSVを再取込してください。"
             )
 
             if not selected_lines:
-                if merge_labels:
-                    st.info(
-                        "対象回線がありません。業務グループを選び直すか、"
-                        "『詳細設定』で回線を直接選択してください。"
-                    )
-                else:
-                    st.info("回線（skill_group）を1件以上選択してください。")
+                st.warning("対象回線が未選択です。回線種別・検索文字・対象期間を確認してください。")
             else:
                 with service_scope() as container:
                     agg = container.answer_rate_threshold_repository.aggregate_selected(
                         view_start, view_end, selected_lines, threshold_sel
                     )
-                    cmp_rows = container.answer_rate_threshold_repository.compare_selected(
-                        view_start, view_end, selected_lines
-                    )
-                completed = agg["completed_count"]
-                valid_abandon = agg["valid_abandon_count"]
-                denom = completed + valid_abandon
-                rate = ar.answer_rate(completed, valid_abandon)
 
-                # 6. 業務グループ + 秒数で結果を大きく表示
-                group_caption = f"業務グループ『{group_label}』 / " if group_label else ""
+                answered = int(agg["completed_count"] or 0)
+                lost = int(agg["valid_abandon_count"] or 0)
+                inbound = answered + lost
+                rate = ar.answer_rate(answered, lost)
+
                 st.markdown(
-                    f"#### {group_caption}{threshold_sel}秒 / 対象期間 {view_start} 〜 {view_end} / "
-                    f"対象回線 {len(selected_lines)} 件"
+                    f"""
+                    <div class="ar-kpi-grid">
+                        <div class="ar-kpi-card">
+                            <div class="ar-kpi-label">入電数</div>
+                            <div class="ar-kpi-value">{inbound:,}本</div>
+                        </div>
+                        <div class="ar-kpi-card">
+                            <div class="ar-kpi-label">応答数</div>
+                            <div class="ar-kpi-value">{answered:,}本</div>
+                        </div>
+                        <div class="ar-kpi-card">
+                            <div class="ar-kpi-label">呼損数</div>
+                            <div class="ar-kpi-value">{lost:,}本</div>
+                        </div>
+                        <div class="ar-kpi-card">
+                            <div class="ar-kpi-label">応答率</div>
+                            <div class="ar-kpi-value">{rate:.1f}%</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                b1, b2, b3, b4, b5 = st.columns(5)
-                b1.metric("応答率", f"{rate:.1f}%")
-                b2.metric("完了呼", f"{completed:,}")
-                b3.metric("有効放棄呼", f"{valid_abandon:,}")
-                b4.metric("分母(完了+有効放棄)", f"{denom:,}")
-                b5.metric("選択回線数", f"{len(selected_lines):,}")
 
-                if denom == 0:
-                    st.warning("選択回線・期間・閾値に該当する集計がありません（完了呼・有効放棄呼が0）。")
+                st.markdown(
+                    f'<div class="ar-info-line">表示条件: {view_start} 〜 {view_end} / '
+                    f'{target_label} / 放棄秒 {threshold_sel}秒 / '
+                    f'入電数 = 応答数 + 呼損数（現行定義）</div>',
+                    unsafe_allow_html=True,
+                )
 
-                # 7. 0/3/10/20/30秒の比較表（同じ回線群・同じ期間。0秒基準の差分付き）
-                st.markdown("**選択回線群の閾値比較（0/3/10/20/30秒）**")
-                by_threshold = {r["threshold_seconds"]: r for r in cmp_rows}
-                cmp_view = []
-                baseline_rate = None
-                baseline_abandon = None
-                for t in ar.COMPARE_THRESHOLDS:
-                    r = by_threshold.get(t, {"completed_count": 0, "valid_abandon_count": 0})
-                    c = r["completed_count"]
-                    va = r["valid_abandon_count"]
-                    d = c + va
-                    rt = ar.answer_rate(c, va)
-                    if t == 0:
-                        baseline_rate = rt
-                        baseline_abandon = va
-                    cmp_view.append(
-                        {
-                            "閾値(秒)": t,
-                            "完了呼": c,
-                            "有効放棄呼": va,
-                            "分母(完了+有効放棄)": d,
-                            "応答率(%)": rt,
-                            "応答率差分(0秒比)": (
-                                round(rt - baseline_rate, 1) if baseline_rate is not None else 0.0
-                            ),
-                            "有効放棄差分(0秒比)": (
-                                va - baseline_abandon if baseline_abandon is not None else 0
-                            ),
-                        }
+                with st.expander("確認用：対象回線一覧", expanded=False):
+                    st.dataframe(
+                        [{"回線(skill_group)": sg} for sg in selected_lines],
+                        use_container_width=True,
+                        hide_index=True,
                     )
-                st.dataframe(cmp_view, use_container_width=True, hide_index=True)
-                cmp_csv = pd.DataFrame(cmp_view).to_csv(index=False).encode("utf-8-sig")
-                st.download_button(
-                    "閾値比較表をCSVダウンロード",
-                    data=cmp_csv,
-                    file_name="view_threshold_comparison.csv",
-                    mime="text/csv",
-                    key="view_compare_dl",
-                )
-                st.caption(
-                    "比較表は同じ回線群・同じ対象期間の0/3/10/20/30秒応答率です。"
-                    "合算値は保存しておらず、選択回線の集計値を都度合算して計算しています。"
-                )
+
+        st.caption(
+            "待ち呼・拒否/呼出中切断を入電数に含める場合は、現行の分母定義とは別の実装が必要です。"
+        )
