@@ -20,3 +20,5 @@ backup/
 
 # Local runtime/test logs
 logs/
+test_db.py
+*.env
