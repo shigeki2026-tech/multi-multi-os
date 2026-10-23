@@ -474,82 +474,52 @@ with tab_view:
     st.markdown(
         """
         <style>
-        .ar-page-title {
-            font-size: 2.0rem;
-            font-weight: 800;
-            letter-spacing: 0.02em;
-            margin: 0.2rem 0 1.2rem 0;
-            color: #111827;
-        }
-        .ar-kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(150px, 1fr));
-            gap: 1.0rem;
-            margin: 1.1rem 0 0.8rem 0;
-        }
-        .ar-kpi-card {
-            border: 1.5px solid #2563eb;
-            border-radius: 10px;
-            background: #ffffff;
-            min-height: 118px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-        }
-        .ar-kpi-label {
-            font-size: 1.02rem;
-            font-weight: 800;
-            color: #111827;
-            margin-bottom: 0.48rem;
-        }
-        .ar-kpi-value {
-            font-size: 2.25rem;
-            line-height: 1.05;
-            font-weight: 900;
-            color: #111827;
-            letter-spacing: 0.01em;
-        }
-        .ar-info-line {
-            color: #374151;
-            font-size: 0.90rem;
-            line-height: 1.55;
-            margin: 0.35rem 0 0.65rem 0;
-        }
-        .ar-warn-box {
-            background: #fff7ed;
-            border: 1px solid #fed7aa;
-            border-radius: 8px;
-            color: #9a3412;
-            font-size: 0.90rem;
-            padding: 0.65rem 0.8rem;
-            margin: 0.55rem 0 0.85rem 0;
-        }
+        .block-container {max-width: 1480px; padding-top: 1.35rem;}
+        .ar-hero {padding: 1.3rem 1.6rem; border-radius: 18px;
+            background: linear-gradient(115deg,#101c35,#203c62);
+            color: #fff; margin: .2rem 0 1.15rem;}
+        .ar-eyebrow {font-size: .77rem; font-weight: 750; letter-spacing: .15em;
+            color: #9dd5ee; margin-bottom: .35rem;}
+        .ar-hero-title {font-size: clamp(1.55rem,2.5vw,2.25rem);
+            font-weight: 850; line-height: 1.2; letter-spacing: -.03em;}
+        .ar-hero-sub {font-size: .9rem; color: #d4e1f1; margin-top: .45rem;}
+        .ar-section {font-size: 1.05rem; font-weight: 800;
+            margin: 1.35rem 0 .65rem; color: #27364e;}
+        .ar-kpi-grid {display: grid; grid-template-columns: repeat(4,minmax(0,1fr));
+            gap: .9rem; margin: 1rem 0 1.1rem;}
+        .ar-kpi-card {background: #fff; border: 1px solid #dce5ef;
+            border-radius: 15px; padding: 1.15rem 1.2rem; min-width: 0;
+            box-shadow: 0 3px 12px rgba(20,40,70,.045);}
+        .ar-kpi-card:last-child {border-top: 4px solid #2773d2;}
+        .ar-kpi-label {font-size: .85rem; font-weight: 700; color: #64748b;
+            margin-bottom: .7rem;}
+        .ar-kpi-value {font-size: clamp(1.55rem,2.45vw,2.5rem);
+            font-weight: 850; letter-spacing: -.045em; color: #17263e;
+            font-variant-numeric: tabular-nums; overflow-wrap: anywhere;}
+        .ar-info-line {background: #f0f5fb; border-radius: 10px;
+            padding: .8rem 1rem; color: #425671; font-size: .86rem;
+            line-height: 1.6; margin: .65rem 0;}
+        .ar-warn-box {background: #fff7ed; border-left: 4px solid #ed9b4b;
+            border-radius: 9px; padding: .85rem 1rem; color: #93400b;
+            font-size: .88rem; margin: .7rem 0;}
         div[data-testid="stSelectbox"] label,
         div[data-testid="stDateInput"] label,
         div[data-testid="stTextInput"] label,
-        div[data-testid="stRadio"] label {
-            font-weight: 800;
-            color: #111827;
-        }
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="input"] {
-            min-height: 46px;
-            border-radius: 8px;
-            background: #ffffff;
-        }
-        @media (max-width: 1100px) {
-            .ar-kpi-grid {
-                grid-template-columns: repeat(2, minmax(150px, 1fr));
-            }
-        }
+        div[data-testid="stRadio"] label {font-weight: 700;}
+        div[data-baseweb="select"] > div, div[data-baseweb="input"] {
+            min-height: 43px; border-radius: 9px;}
+        @media(max-width:900px) {.ar-kpi-grid {grid-template-columns: repeat(2,minmax(0,1fr));}}
+        @media(max-width:500px) {.ar-kpi-grid {grid-template-columns: 1fr 1fr;gap:.55rem;}
+            .ar-kpi-card {padding:.8rem;} .ar-kpi-value {font-size:1.55rem;}}
         </style>
+        <div class="ar-hero">
+          <div class="ar-eyebrow">OPERATIONS INTELLIGENCE</div>
+          <div class="ar-hero-title">応答率モニター</div>
+          <div class="ar-hero-sub">期間・対象・放棄秒を指定して、入電と呼損を即座に確認</div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
-
-    st.markdown('<div class="ar-page-title">応答率速報</div>', unsafe_allow_html=True)
 
     with service_scope() as container:
         v_has_data = container.answer_rate_threshold_repository.has_data()
@@ -581,6 +551,7 @@ with tab_view:
             st.session_state.get("ar_period_end", v_max), v_max
         )
 
+        st.markdown('<div class="ar-section">01 / 集計条件</div>', unsafe_allow_html=True)
         pc1, pc2, pc3 = st.columns([1.0, 1.0, 1.2], gap="large")
         view_start = pc1.date_input(
             "対象期間 開始",
@@ -624,6 +595,7 @@ with tab_view:
                     }
                 )
 
+            st.markdown('<div class="ar-section">02 / 対象の選択</div>', unsafe_allow_html=True)
             target_mode = st.radio(
                 "回線種別",
                 options=["業務グループ", "個別回線", "全回線"],
@@ -718,6 +690,7 @@ with tab_view:
                 inbound = answered + lost
                 rate = ar.answer_rate(answered, lost)
 
+                st.markdown('<div class="ar-section">03 / 集計結果</div>', unsafe_allow_html=True)
                 st.markdown(
                     f"""
                     <div class="ar-kpi-grid">
